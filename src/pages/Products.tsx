@@ -15,7 +15,7 @@ interface Product {
 
 const columns = [
   { key: "name" as const, label: "Name" },
-  { key: "sku" as const, label: "SKU" },
+  { key: "sku" as const, label: "Category" },
   {
     key: "final_amount" as const,
     label: "Price",
