@@ -42,7 +42,7 @@ export const AppHeader = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const title = pageTitles[location.pathname] || "BizBright";
+  const title = pageTitles[location.pathname] || "Trackdesk";
 
   const handleLogout = () => {
     logout();

@@ -1,8 +1,39 @@
 import { Link, useNavigate } from "react-router-dom";
 import {
-  User, LogOut, FolderTree, Package, Truck, UserCheck, Grid3X3, CalendarCheck,
-  ArrowDownCircle, ArrowUpCircle, Receipt, BarChart3, ChevronRight, UtensilsCrossed,
-  Users, ShieldCheck, FileText, Facebook, Instagram, Twitter, Youtube, Linkedin, Mail, Phone,
+  User,
+  LogOut,
+  FolderTree,
+  Package,
+  Truck,
+  UserCheck,
+  Grid3X3,
+  CalendarCheck,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Receipt,
+  BarChart3,
+  ChevronRight,
+  UtensilsCrossed,
+  Users,
+  ShieldCheck,
+  FileText,
+  Facebook,
+  Instagram,
+  Twitter,
+  Youtube,
+  Linkedin,
+  Mail,
+  Phone,
+  // New icons for missing pages
+  Wallet,
+  HandCoins,
+  Trash2,
+  FileSpreadsheet,
+  ClipboardList,
+  Boxes,
+  Settings,
+  RotateCcw,
+  ShoppingBag,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -30,12 +61,29 @@ const MoreMenu = () => {
   };
 
   const menuGroups = [
+    // ---- Operations (Main) ----
     {
       label: "Operations",
       items: isRestaurant
         ? [{ to: "/restaurant-tables", icon: UtensilsCrossed, label: "Tables" }]
         : [{ to: "/tables", icon: Grid3X3, label: "Tables" }],
     },
+    // ---- Transactions (new) ----
+    {
+      label: "Transactions",
+      items: [
+        { to: "/sales", icon: Receipt, label: "Sales" },
+        ...(isRestaurant
+          ? []
+          : [{ to: "/sales-return", icon: RotateCcw, label: "Sales Return" }]),
+        { to: "/purchases", icon: ShoppingBag, label: "Purchases" },
+        { to: "/purchases-return", icon: RotateCcw, label: "Purchases Return" },
+        { to: "/purchases-payment", icon: HandCoins, label: "Purchases Payment" },
+        { to: "/weastage-product", icon: Trash2, label: "Weastage Product" },
+        { to: "/quotaion", icon: FileSpreadsheet, label: "Quotation" },
+      ],
+    },
+    // ---- Masters ----
     {
       label: "Masters",
       items: [
@@ -46,16 +94,35 @@ const MoreMenu = () => {
         { to: "/employees", icon: UserCheck, label: "Employees" },
       ],
     },
+    // ---- Finance (updated to match sidebar) ----
     {
       label: "Finance",
       items: [
-        { to: "/sales", icon: Receipt, label: "Sales" },
-        { to: "/purchases", icon: BarChart3, label: "Purchases" },
-        { to: "/income", icon: ArrowDownCircle, label: "Income" },
-        { to: "/expenses", icon: ArrowUpCircle, label: "Expenses" },
+        { to: "/expance-category", icon: FolderTree, label: "Expense Category" },
+        { to: "/account", icon: Wallet, label: "Account" },
+        { to: "/income", icon: ArrowDownCircle, label: "Transaction" },
         { to: "/attendance", icon: CalendarCheck, label: "Attendance" },
       ],
     },
+    // ---- Reports (new) ----
+    {
+      label: "Reports",
+      items: [
+        { to: "/reports/inventory", icon: Boxes, label: "Stock Report" },
+        { to: "/reports/gst", icon: FileText, label: "GST Report" },
+        { to: "/reports/orders", icon: ClipboardList, label: "Order Report" },
+        { to: "/reports/transaction-report", icon: FileText, label: "Transaction Report" },
+        { to: "/reports/vendor-payment-reminder", icon: HandCoins, label: "Vendor Payment Reminder" },
+        { to: "/reports/customer-payment-reminder", icon: HandCoins, label: "Customer Payment Reminder" },
+        { to: "/reports/sms", icon: FileText, label: "SMS" },
+      ],
+    },
+    // ---- Random (new) ----
+    {
+      label: "Random",
+      items: [{ to: "/settings", icon: Settings, label: "Settings" }],
+    },
+    // ---- Legal ----
     {
       label: "Legal",
       items: [
@@ -143,21 +210,27 @@ const MoreMenu = () => {
 
       {/* Account actions */}
       <div className="bg-card rounded-2xl overflow-hidden border border-border shadow-card divide-y divide-border">
-        <button onClick={() => navigate("/more")} className="w-full flex items-center justify-between px-3 py-3 hover:bg-muted transition-colors">
+        <button
+          onClick={() => navigate("/more")}
+          className="w-full flex items-center justify-between px-3 py-3 hover:bg-muted transition-colors"
+        >
           <span className="flex items-center gap-3">
             <User className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium">Account details</span>
           </span>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </button>
-        <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-3 text-destructive hover:bg-destructive/10 transition-colors">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-3 text-destructive hover:bg-destructive/10 transition-colors"
+        >
           <LogOut className="h-4 w-4" />
           <span className="text-sm font-semibold">Logout</span>
         </button>
       </div>
 
       <p className="text-center text-[11px] text-muted-foreground pb-4">
-        BizBright • Version {APP_VERSION}
+        Trackdesk • Version {APP_VERSION}
       </p>
     </div>
   );

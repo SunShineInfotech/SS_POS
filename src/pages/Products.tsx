@@ -1,107 +1,137 @@
+// src/pages/Products.tsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable } from "@/components/shared/DataTable";
 import { toast } from "sonner";
-import axios from "axios";
+import { ProductService, Product } from "@/services/product.service";
 
-interface Product {
-  id: number;
-  name: string;
-  sku: string;
-  final_amount: number;
-  stock: number;
-  is_active: number;
-}
-
-const columns = [
-  { key: "name" as const, label: "Name" },
-  { key: "sku" as const, label: "SKU" },
-  {
-    key: "final_amount" as const,
-    label: "Price",
-    render: (value: any) => `₹${Number(value || 0).toFixed(2)}`,
-  },
-  // { key: "stock" as const, label: "Stock" },
-  {
-    key: "is_active" as const,
-    label: "Status",
-    render: (value: any) => (
-      <span
-        className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-          Number(value) === 1
-            ? "bg-accent/10 text-accent"
-            : "bg-muted text-muted-foreground"
-        }`}
-      >
-        {Number(value) === 1 ? "Active" : "Inactive"}
-      </span>
-    ),
-  },
-];
-
-const API_URL =
-  import.meta.env.VITE_API_URL || "https://sunshineproduct.in/POS/v1_api/";
-
-const getUserProfile = () =>
-  JSON.parse(localStorage.getItem("company_data") || "{}");
+const getCompanyData = () => {
+  const raw = localStorage.getItem("company_data");
+  return raw ? JSON.parse(raw) : null;
+};
 
 const Products = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<Product[]>([]);
+  const company = getCompanyData();
+  const franchiseType = company?.franchise_type || 1;
+
+  const columns = [
+    { key: "product_name", label: "Name" },
+    {
+      key: "category_name",
+      label: "Category",
+      render: (v: any) => v || "N/A",
+    },
+    {
+      key: "product_image",
+      label: "Image",
+      render: (v: any) =>
+        v ? (
+          <img
+            src={`${v}`}
+            alt=""
+            className="h-8 w-8 rounded object-cover"
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">No image</span>
+        ),
+    },
+    {
+      key: "product_final_amount",
+      label: "Price",
+      render: (v: any) => `₹${Number(v || 0).toFixed(2)}`,
+    },
+    {
+      key: "product_is_active",
+      label: "Status",
+      render: (v: any) => {
+        const status = Number(v);
+        return (
+          <span
+            className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+              status === 1
+                ? "bg-accent/10 text-accent"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {status === 1 ? "Active" : "Inactive"}
+          </span>
+        );
+      },
+    },
+  ];
+
+  // Add extra columns for Shop
+  if (franchiseType === 1) {
+    columns.push(
+      { key: "product_sku", label: "SKU", render: (v: any) => v || "-" },
+      { key: "product_hsn_code", label: "HSN", render: (v: any) => v || "-" },
+      {
+        key: "product_stock",
+        label: "Stock",
+        render: (v: any) => Number(v || 0).toFixed(0),
+      }
+    );
+  } else {
+    // Restaurant: show product type
+    columns.push({
+      key: "product_type",
+      label: "Type",
+      render: (v: any) => {
+        const types: Record<number, string> = { 1: "Sales", 2: "Purchase", 3: "Both" };
+        return types[Number(v)] || "-";
+      },
+    });
+  }
 
   const fetchProducts = async () => {
+    if (!company) {
+      toast.error("Company data not found");
+      return;
+    }
     try {
-      const userProfile = getUserProfile();
-      const res = await axios.post(`${API_URL}product.php`, {
-        type: 2,
-        company_id: userProfile.company_id,
-        franchise_id: userProfile.franchise_id,
-      });
-
-      console.log("Fetch Products Response:", res.data);
-      if (res.data.status === "success") {
-        const tempData = res.data.data.map((item: any) => ({
+      const res = await ProductService.getProducts(
+        company.company_id,
+        company.franchise_id
+      );
+      if (res.status === "success" && res.data) {
+        // Map product_id → id for DataTable
+        const mapped = res.data.map((item) => ({
+          ...item,
           id: item.product_id,
-          name: item.product_name,
-          sku: item.category_name,
-          final_amount: item.product_final_amount,
-          // stock: item.product_stock,
-          is_active: item.product_is_active,
         }));
-        setData(tempData);
+        setData(mapped);
       } else {
-        toast.error(res.data.message || "Failed to fetch products");
+        toast.error(res.message || "Failed to fetch products");
       }
     } catch (error) {
       console.error("Error fetching products:", error);
-      toast.error("Failed to fetch products. Please try again.");
+      toast.error("Failed to fetch products.");
     }
   };
 
   useEffect(() => {
     fetchProducts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleDelete = async (id: number) => {
-    const userProfile = getUserProfile();
+    if (!company) return;
     try {
-      const res = await axios.post(`${API_URL}product.php`, {
-        type: 4,
-        company_id: userProfile.company_id,
-        franchise_id: userProfile.franchise_id,
-        product_id: id,
-      });
-
-      if (res.data.status === "success") {
-        setData((prev) => prev.filter((p) => p.id !== id));
-        toast.success(res.data.message || "Deleted");
+      const res = await ProductService.deleteProduct(
+        id,
+        company.company_id,
+        company.franchise_id
+      );
+      if (res.status === "success") {
+        setData((prev) => prev.filter((p) => Number(p.product_id) !== id));
+        toast.success(res.message || "Deleted");
       } else {
-        toast.error(res.data.message || "Failed to delete product");
+        toast.error(res.message || "Failed to delete");
       }
     } catch (error) {
-      console.error("Error deleting product:", error);
-      toast.error("Failed to delete product. Please try again.");
+      console.error("Error deleting:", error);
+      toast.error("Failed to delete product.");
     }
   };
 
@@ -110,7 +140,7 @@ const Products = () => {
       data={data}
       columns={columns}
       onAdd={() => navigate("/products/new")}
-      onEdit={(row) => navigate(`/products/${row.id}`)}
+      onEdit={(row) => navigate(`/products/${row.id}`)} // row.id = product_id
       onDelete={(id) => handleDelete(id as number)}
       addLabel="Add Product"
       hideStatusToggle
