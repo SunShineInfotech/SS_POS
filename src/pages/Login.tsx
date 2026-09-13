@@ -25,154 +25,223 @@ import {
 } from "lucide-react";
 import { useAuth, Role } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import axios from "axios";
+import { AuthService } from "@/services/auth.service";
+import { Franchise } from "@/services/auth.types";
 
 const FINANCIAL_YEARS = ["2026-27", "2025-26", "2024-25", "2023-24"];
 
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [role, setRole] = useState<Role>("shop");
-  const [mode, setMode] = useState<"password" | "otp">("password");
-  const [financialYear, setFinancialYear] = useState(FINANCIAL_YEARS[0]);
 
-  // --- Company Code gate ---
+  // ----- Company Code -----
   const [companyCode, setCompanyCode] = useState("");
   const [companyVerified, setCompanyVerified] = useState(false);
+  const [franchise, setFranchise] = useState<Franchise | null>(null);
+  const [franchiseType, setFranchiseType] = useState<1 | 2>(1);
+  const [renewalExpired, setRenewalExpired] = useState(false);
+  const [renewalMessage, setRenewalMessage] = useState("");
 
+  // ----- Role & Financial Year -----
+  const [role, setRole] = useState<Role>("shop");
+  const [financialYear, setFinancialYear] = useState(FINANCIAL_YEARS[0]);
+
+  // ----- Password mode -----
   const [MobileNumber, setMobileNumber] = useState("");
   const [password, setPassword] = useState("");
 
+  // ----- OTP mode -----
   const [mobile, setMobile] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [seconds, setSeconds] = useState(0);
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
 
-  const API_URL =
-    import.meta.env.VITE_API_URL || "https://sunshineproduct.in/POS/v1_api/";
+  const [mode, setMode] = useState<"password" | "otp">("password");
 
-  useEffect(() => {
-    if (seconds <= 0) return;
-    const t = setTimeout(() => setSeconds((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [seconds]);
-
+  // ----- Submit Company Code (Case 1) -----
   const submitCompanyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyCode.trim()) return toast.error("Enter your company code");
 
     try {
-      const res = await axios.post(`${API_URL}login.php`, {
-        type: 1,
-        company_code: companyCode.trim(),
-      });
+      const res = await AuthService.verifyCompany(companyCode.trim());
+      if (res.status === "success") {
+        const company = res.company;
+        setFranchise(company);
+        setFranchiseType(company.franchise_type);
+        setRenewalExpired(res.renewal_expired);
+        setRenewalMessage(res.renewal_message);
 
-      if (res.data.status === "success") {
-        const company = res.data.company;
-        setCompanyCode(company.franchise_code);
+        // Auto‑set role based on franchise_type
+        const autoRole: Role = company.franchise_type === 1 ? "shop" : "restaurant";
+        setRole(autoRole);
+
         setCompanyVerified(true);
         localStorage.setItem("company_code", company.franchise_code);
         localStorage.setItem("company_data", JSON.stringify(company));
 
-        toast.success(res.data.message, {
-          description: `Welcome to ${company.company_name}`,
+        toast.success(res.message, {
+          description: `Welcome to ${company.franchise_name}`,
         });
+
+        // Show renewal alert if expired
+        if (res.renewal_expired) {
+          toast.warning("Subscription Expired", {
+            description: res.renewal_message,
+            duration: 6000,
+          });
+        }
       } else {
-        toast.error(res.data.message || "Invalid company code");
+        toast.error(res.message || "Invalid company code");
       }
-      console.log("Company code validation response:", res.data);
-    } catch (err) {
-      console.error("Error validating company code:", err);
-      toast.error("Error validating company code. Please try again.");
-      return;
-    } finally {
+    } catch (err: any) {
+      console.error("Company verification error:", err);
+      toast.error(err.response?.data?.message || "Error verifying company code");
     }
   };
 
   const changeCompanyCode = () => {
     setCompanyVerified(false);
+    setFranchise(null);
   };
 
-  const finish = (name: string) => {
+  // ----- Helper: Finalize login (store auth, navigate) -----
+  const finalizeLogin = (
+    userData: any,
+    token: string,
+    company: Franchise,
+    franchiseType: 1 | 2,
+    renewalExpired: boolean,
+    renewalMessage: string
+  ) => {
+    // Store token and user
+    localStorage.setItem("token", token);
+    localStorage.setItem("user_data", JSON.stringify(userData));
+    localStorage.setItem("company_data", JSON.stringify(company));
+
+    // Update AuthContext
+    const role: Role = franchiseType === 1 ? "shop" : "restaurant";
     login({
-      MobileNumber: name,
+      MobileNumber: userData.name,
       role,
-      shopName: role === "shop" ? "My Shop" : "My Restaurant",
-      mobile: mobile || "9876543210",
-      email: "",
+      shopName: role === "shop" ? company.franchise_name : "Restaurant",
+      mobile: userData.employee_mobile,
+      email: userData.email,
       financialYear,
-      // companyCode, // include this in your AuthContext/login payload if needed downstream
     });
-    toast.success(`Welcome ${name}`, {
-      description: `Financial year ${financialYear}`,
+
+    toast.success("Login successful", {
+      description: `Welcome ${userData.name}`,
     });
+
+    // Show renewal warning if expired
+    if (renewalExpired) {
+      toast.warning("Subscription Expired", {
+        description: renewalMessage,
+        duration: 6000,
+      });
+    }
+
     navigate(role === "restaurant" ? "/restaurant-tables" : "/");
   };
 
+  // ----- Password Login (Case 2) -----
   const submitPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!MobileNumber.trim() || !password.trim())
-      return toast.error("Enter MobileNumber and password");
-    // finish(MobileNumber.trim());
+    if (!MobileNumber.trim() || !password.trim()) {
+      return toast.error("Enter mobile number and password");
+    }
+
     try {
-      const res: any = await axios.post(`${API_URL}login.php`, {
-        type: 1,
-        company_code: companyCode.trim(),
-        mobile: MobileNumber.trim(),
-        password: password.trim(),
-      });
+      const res = await AuthService.loginWithPassword(
+        companyCode.trim(),
+        MobileNumber.trim(),
+        password.trim()
+      );
 
-      if (res.data.status === "success") {
-        const user = res.data.user;
-        const company = res.data.company;
-        const existingCompanyData = JSON.parse(
-          localStorage.getItem("company_data") || "{}",
+      if (res.status === "success" && res.token && res.user && res.company) {
+        finalizeLogin(
+          res.user,
+          res.token,
+          res.company,
+          res.franchise_type,
+          res.renewal_expired,
+          res.renewal_message
         );
-
-        localStorage.setItem(
-          "company_data",
-          JSON.stringify({ ...existingCompanyData, ...company }),
-        );
-        localStorage.setItem("token", res.data.token);
-        localStorage.setItem("user_data", JSON.stringify(user));
-
-        login({
-          MobileNumber: user.name,
-          role,
-          shopName: role === "shop" ? "My Shop" : "My Restaurant",
-          mobile: user.employee_mobile,
-          email: user.email,
-          financialYear,
-        });
-
-        toast.success(res.data.message, {
-          description: `Welcome ${user.name}`,
-        });
-        navigate(role === "restaurant" ? "/restaurant-tables" : "/");
       } else {
-        toast.error(res.data.message || "Invalid MobileNumber or password");
+        toast.error(res.message || "Invalid credentials");
       }
-      console.log("Password login response:", res.data);
-    } catch (err) {
-      console.error("Error during password login:", err);
-      toast.error("Error during login. Please try again.");
-    } finally {
+    } catch (err: any) {
+      console.error("Password login error:", err);
+      toast.error(err.response?.data?.message || "Login failed");
     }
   };
 
-  const sendOtp = () => {
-    if (mobile.trim().length !== 10)
+  // ----- Send OTP (Case 3) -----
+  const sendOtp = async () => {
+    if (mobile.trim().length !== 10) {
       return toast.error("Enter a valid 10-digit mobile number");
-    setOtpSent(true);
-    setOtp(["", "", "", "", "", ""]);
-    setSeconds(30);
-    toast.success("OTP sent", {
-      description: `A 6-digit code was sent to ${mobile}`,
-    });
-    setTimeout(() => otpRefs.current[0]?.focus(), 80);
+    }
+
+    try {
+      const res = await AuthService.sendOtp(companyCode.trim(), mobile.trim());
+      if (res.status === "success") {
+        setOtpSent(true);
+        setOtp(["", "", "", "", "", ""]);
+        setSeconds(30);
+        toast.success("OTP sent", {
+          description: `A 6-digit code was sent to ${mobile}`,
+        });
+        // For testing only – show OTP in console (or toast)
+        if (res.otp) {
+          console.log("OTP (for testing):", res.otp);
+          toast.info(`Demo OTP: ${res.otp}`, { duration: 5000 });
+        }
+        setTimeout(() => otpRefs.current[0]?.focus(), 80);
+      } else {
+        toast.error(res.message || "Failed to send OTP");
+      }
+    } catch (err: any) {
+      console.error("Send OTP error:", err);
+      toast.error(err.response?.data?.message || "Error sending OTP");
+    }
   };
 
+  // ----- Verify OTP (Case 4) -----
+  const verifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.some((d) => !d)) {
+      return toast.error("Enter the complete 6-digit OTP");
+    }
+    const otpCode = otp.join("");
+
+    try {
+      const res = await AuthService.verifyOtp(
+        companyCode.trim(),
+        mobile.trim(),
+        otpCode
+      );
+
+      if (res.status === "success" && res.token && res.user && res.company) {
+        finalizeLogin(
+          res.user,
+          res.token,
+          res.company,
+          res.franchise_type,
+          res.renewal_expired,
+          res.renewal_message
+        );
+      } else {
+        toast.error(res.message || "Invalid OTP");
+      }
+    } catch (err: any) {
+      console.error("OTP verification error:", err);
+      toast.error(err.response?.data?.message || "OTP verification failed");
+    }
+  };
+
+  // OTP input handlers
   const setOtpDigit = (idx: number, value: string) => {
     const digit = value.replace(/\D/g, "").slice(-1);
     setOtp((prev) => {
@@ -183,32 +252,26 @@ const Login = () => {
     if (digit && idx < 5) otpRefs.current[idx + 1]?.focus();
   };
 
-  const onOtpKeyDown = (
-    idx: number,
-    e: React.KeyboardEvent<HTMLInputElement>,
-  ) => {
-    if (e.key === "Backspace" && !otp[idx] && idx > 0)
+  const onOtpKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !otp[idx] && idx > 0) {
       otpRefs.current[idx - 1]?.focus();
+    }
   };
 
-  const verifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otp.some((d) => !d))
-      return toast.error("Enter the complete 6-digit OTP");
-    finish(`+91 ${mobile}`);
-  };
+  // OTP timer
+  useEffect(() => {
+    if (seconds <= 0) return;
+    const t = setTimeout(() => setSeconds((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [seconds]);
 
+  // ----- Render -----
   return (
     <div className="min-h-screen flex items-stretch bg-background">
       {/* Brand panel (desktop) */}
       <div className="hidden lg:flex w-[46%] flex-col justify-between p-10 bg-gradient-cool text-primary-foreground">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-foreground/15">
-            <Layers className="h-5 w-5" />
-          </span>
-          <span className="font-display text-lg font-bold tracking-tight">
-            SunShine
-          </span>
+          <img src="images/logo/SunShine-tra.png" style={{ width: '30%' }} alt="SunShine Logo" />
         </div>
         <div className="space-y-4 max-w-md">
           <h2 className="font-display text-3xl font-extrabold leading-tight">
@@ -256,7 +319,7 @@ const Login = () => {
                 <h2 className="font-display text-xl font-bold">Sign in</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {companyVerified
-                    ? "Select your business type and financial year"
+                    ? "Select your financial year and sign in"
                     : "Enter your company code to continue"}
                 </p>
               </div>
@@ -265,16 +328,12 @@ const Login = () => {
                 // --- Step 1: Company Code gate ---
                 <form onSubmit={submitCompanyCode} className="space-y-4">
                   <div>
-                    <Label className="text-xs font-semibold">
-                      Company Code
-                    </Label>
+                    <Label className="text-xs font-semibold">Company Code</Label>
                     <div className="relative mt-1">
                       <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         value={companyCode}
-                        onChange={(e) =>
-                          setCompanyCode(e.target.value.toUpperCase())
-                        }
+                        onChange={(e) => setCompanyCode(e.target.value.toUpperCase())}
                         placeholder="e.g. BIZ2026"
                         className="pl-9 font-display tracking-wide"
                         autoFocus
@@ -286,7 +345,7 @@ const Login = () => {
                   </Button>
                 </form>
               ) : (
-                // --- Step 2: Existing sign-in options ---
+                // --- Step 2: Sign-in options ---
                 <>
                   <div className="flex items-center justify-between rounded-xl border border-border bg-muted/50 px-3 py-2">
                     <div className="flex items-center gap-2 text-xs">
@@ -304,53 +363,41 @@ const Login = () => {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setRole("shop")}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${
+                  {/* Role selection – auto‑set from franchise_type, disabled */}
+                  <div className="grid grid-cols-2 gap-2 opacity-70 cursor-not-allowed d-none">
+                    <div
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 ${
                         role === "shop"
                           ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/40"
+                          : "border-border"
                       }`}
                     >
-                      <Store
-                        className={`h-5 w-5 ${role === "shop" ? "text-primary" : "text-muted-foreground"}`}
-                      />
-                      <span
-                        className={`text-xs font-medium ${role === "shop" ? "text-primary" : ""}`}
-                      >
+                      <Store className={`h-5 w-5 ${role === "shop" ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className={`text-xs font-medium ${role === "shop" ? "text-primary" : ""}`}>
                         Shop Owner
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRole("restaurant")}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${
+                    </div>
+                    <div
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 ${
                         role === "restaurant"
                           ? "border-accent bg-accent/5"
-                          : "border-border hover:border-accent/40"
+                          : "border-border"
                       }`}
                     >
-                      <UtensilsCrossed
-                        className={`h-5 w-5 ${role === "restaurant" ? "text-accent" : "text-muted-foreground"}`}
-                      />
-                      <span
-                        className={`text-xs font-medium ${role === "restaurant" ? "text-accent" : ""}`}
-                      >
+                      <UtensilsCrossed className={`h-5 w-5 ${role === "restaurant" ? "text-accent" : "text-muted-foreground"}`} />
+                      <span className={`text-xs font-medium ${role === "restaurant" ? "text-accent" : ""}`}>
                         Restaurant Owner
                       </span>
-                    </button>
+                    </div>
                   </div>
+                  <p className="text-[10px] text-muted-foreground text-center -mt-1 d-none">
+                    Role is auto‑selected from your company settings
+                  </p>
 
+                  {/* Financial Year */}
                   <div>
-                    <Label className="text-xs font-semibold">
-                      Financial Year
-                    </Label>
-                    <Select
-                      value={financialYear}
-                      onValueChange={setFinancialYear}
-                    >
+                    <Label className="text-xs font-semibold">Financial Year</Label>
+                    <Select value={financialYear} onValueChange={setFinancialYear}>
                       <SelectTrigger className="mt-1">
                         <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
                         <SelectValue />
@@ -366,7 +413,7 @@ const Login = () => {
                   </div>
 
                   {/* Mode tabs */}
-                  <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted">
+                  <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted d-none">
                     {(["password", "otp"] as const).map((m) => (
                       <button
                         key={m}
@@ -386,23 +433,19 @@ const Login = () => {
                   {mode === "password" ? (
                     <form onSubmit={submitPassword} className="space-y-4">
                       <div>
-                        <Label className="text-xs font-semibold">
-                          Mobile Number
-                        </Label>
+                        <Label className="text-xs font-semibold">Mobile Number</Label>
                         <div className="relative mt-1">
                           <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
                             value={MobileNumber}
                             onChange={(e) => setMobileNumber(e.target.value)}
-                            placeholder="admin"
+                            placeholder="Enter mobile number"
                             className="pl-9"
                           />
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs font-semibold">
-                          Password
-                        </Label>
+                        <Label className="text-xs font-semibold">Password</Label>
                         <div className="relative mt-1">
                           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
@@ -415,13 +458,12 @@ const Login = () => {
                         </div>
                       </div>
                       <Button type="submit" className="w-full font-display">
-                        Login as{" "}
-                        {role === "shop" ? "Shop Owner" : "Restaurant Owner"}
+                        Login as {role === "shop" ? "Shop Owner" : "Restaurant Owner"}
                       </Button>
                       <button
                         type="button"
                         onClick={() => setMode("otp")}
-                        className="w-full text-xs text-primary font-medium"
+                        className="w-full text-xs text-primary font-medium d-none"
                       >
                         Login with OTP instead
                       </button>
@@ -439,18 +481,14 @@ const Login = () => {
                       className="space-y-4"
                     >
                       <div>
-                        <Label className="text-xs font-semibold">
-                          Mobile Number
-                        </Label>
+                        <Label className="text-xs font-semibold">Mobile Number</Label>
                         <div className="relative mt-1">
                           <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
                             inputMode="numeric"
                             value={mobile}
                             onChange={(e) =>
-                              setMobile(
-                                e.target.value.replace(/\D/g, "").slice(0, 10),
-                              )
+                              setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))
                             }
                             placeholder="10-digit mobile"
                             className="pl-9 font-display tracking-wide"
@@ -460,9 +498,7 @@ const Login = () => {
 
                       {otpSent && (
                         <div className="space-y-2">
-                          <Label className="text-xs font-semibold">
-                            Enter 6-digit OTP
-                          </Label>
+                          <Label className="text-xs font-semibold">Enter 6-digit OTP</Label>
                           <div className="flex gap-2">
                             {otp.map((d, i) => (
                               <input
@@ -515,7 +551,7 @@ const Login = () => {
               )}
 
               <p className="text-[11px] text-center text-muted-foreground border-t border-border pt-3">
-                Demo login — any MobileNumber, password or OTP works
+                Demo login — use any valid mobile/password or OTP
               </p>
             </CardContent>
           </Card>

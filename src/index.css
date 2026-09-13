@@ -7,46 +7,61 @@
 @layer base {
   :root {
     /* Surfaces */
-    --background: 214 32% 97%;      /* #F5F7FA */
-    --foreground: 222 42% 12%;      /* #121B2B */
+    --background: 214 32% 97%;
+    /* #F5F7FA */
+    --foreground: 222 42% 12%;
+    /* #121B2B */
 
-    --card: 0 0% 100%;              /* #FFFFFF */
+    --card: 0 0% 100%;
+    /* #FFFFFF */
     --card-foreground: 222 42% 12%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 222 42% 12%;
 
     /* Brand */
-    --primary: 215 72% 32%;         /* #16558C */
+    --primary: 215 72% 32%;
+    /* #16558C */
     --primary-foreground: 0 0% 100%;
-    --primary-glow: 210 82% 46%;    /* #1584D6 */
+    --primary-glow: 210 82% 46%;
+    /* #1584D6 */
 
-    --secondary: 214 28% 93%;       /* #E8EDF3 */
+    --secondary: 214 28% 93%;
+    /* #E8EDF3 */
     --secondary-foreground: 220 25% 25%;
 
-    --muted: 214 24% 95%;           /* #EEF1F6 */
-    --muted-foreground: 218 14% 44%;/* #626F80 */
+    --muted: 214 24% 95%;
+    /* #EEF1F6 */
+    --muted-foreground: 218 14% 44%;
+    /* #626F80 */
 
-    --accent: 176 58% 34%;          /* #248C84 */
+    --accent: 176 58% 34%;
+    /* #248C84 */
     --accent-foreground: 0 0% 100%;
 
     /* States */
-    --destructive: 0 68% 46%;       /* #C52626 */
+    --destructive: 0 68% 46%;
+    /* #C52626 */
     --destructive-foreground: 0 0% 100%;
 
-    --warning: 34 92% 46%;          /* #E1860A */
+    --warning: 34 92% 46%;
+    /* #E1860A */
     --warning-foreground: 0 0% 100%;
 
-    --success: 152 58% 33%;         /* #23855A */
+    --success: 152 58% 33%;
+    /* #23855A */
     --success-foreground: 0 0% 100%;
 
-    --info: 205 78% 41%;            /* #1774BA */
+    --info: 205 78% 41%;
+    /* #1774BA */
     --info-foreground: 0 0% 100%;
 
-    --pink: 334 62% 47%;            /* #C22E68 */
+    --pink: 334 62% 47%;
+    /* #C22E68 */
     --pink-foreground: 0 0% 100%;
 
-    --teal: 184 62% 34%;            /* #21808C */
+    --teal: 184 62% 34%;
+    /* #21808C */
     --teal-foreground: 0 0% 100%;
 
     /* Gradients & shadows */
@@ -58,18 +73,23 @@
     --shadow-float: 0 12px 32px -12px hsl(215 72% 32% / 0.35);
 
     /* Lines & controls */
-    --border: 214 22% 87%;          /* #D6DDE6 */
+    --border: 214 22% 87%;
+    /* #D6DDE6 */
     --input: 214 22% 87%;
     --ring: 210 82% 46%;
 
     --radius: 0.625rem;
 
     /* Sidebar */
-    --sidebar-background: 219 45% 13%;   /* #121F30 */
-    --sidebar-foreground: 214 24% 78%;   /* #B7C2D0 */
-    --sidebar-primary: 210 82% 50%;      /* #178BE8 */
+    --sidebar-background: 219 45% 13%;
+    /* #121F30 */
+    --sidebar-foreground: 214 24% 78%;
+    /* #B7C2D0 */
+    --sidebar-primary: 210 82% 50%;
+    /* #178BE8 */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 219 38% 19%;       /* #1E2C41 */
+    --sidebar-accent: 219 38% 19%;
+    /* #1E2C41 */
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 219 32% 22%;
     --sidebar-ring: 210 82% 50%;
@@ -82,20 +102,24 @@
   }
 
   .dark {
-    --background: 220 32% 8%;       /* #0E131B */
+    --background: 220 32% 8%;
+    /* #0E131B */
     --foreground: 214 28% 92%;
 
-    --card: 220 28% 11%;            /* #141A24 */
+    --card: 220 28% 11%;
+    /* #141A24 */
     --card-foreground: 214 28% 92%;
 
     --popover: 220 28% 11%;
     --popover-foreground: 214 28% 92%;
 
-    --primary: 210 82% 54%;         /* #2B95EE */
+    --primary: 210 82% 54%;
+    /* #2B95EE */
     --primary-foreground: 220 40% 8%;
     --primary-glow: 200 84% 60%;
 
-    --secondary: 220 22% 17%;       /* #212933 */
+    --secondary: 220 22% 17%;
+    /* #212933 */
     --secondary-foreground: 214 24% 88%;
 
     --muted: 220 20% 16%;
@@ -158,7 +182,12 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-display);
     letter-spacing: -0.01em;
   }
@@ -168,20 +197,30 @@
   .font-display {
     font-family: var(--font-display);
   }
+
   .font-body {
     font-family: var(--font-body);
   }
+
   .shadow-card {
     box-shadow: var(--shadow-card);
   }
+
   .shadow-float {
     box-shadow: var(--shadow-float);
   }
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+}
+
+
+.d-none {
+  display: none
 }

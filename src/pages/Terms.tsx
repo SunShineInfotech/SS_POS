@@ -1,7 +1,7 @@
 const sections = [
   {
     title: "Acceptance of terms",
-    body: "By creating an account and using BizBright you agree to these terms. If you do not agree, please discontinue use of the application.",
+    body: "By creating an account and using Trackdesk you agree to these terms. If you do not agree, please discontinue use of the application.",
   },
   {
     title: "Your account",
@@ -17,7 +17,7 @@ const sections = [
   },
   {
     title: "Limitation of liability",
-    body: "BizBright is provided on an as-is basis. We are not liable for indirect or consequential losses arising from use of the application.",
+    body: "Trackdesk is provided on an as-is basis. We are not liable for indirect or consequential losses arising from use of the application.",
   },
 ];
 

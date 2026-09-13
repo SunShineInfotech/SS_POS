@@ -17,6 +17,19 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Layers,
+  FileText,
+  // new icons for better differentiation
+  ShoppingBag,
+  RotateCcw,
+  Wallet,
+  HandCoins,
+  Trash2,
+  FileSpreadsheet,
+  Settings,
+  Boxes,
+  ClipboardList,
+  // for the new random section
+  Shuffle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -33,7 +46,9 @@ interface Props {
 export const DesktopSidebar = ({ collapsed, onToggle }: Props) => {
   const location = useLocation();
   const { user } = useAuth();
-  const isRestaurant = user?.role === "restaurant";
+  const companyData = localStorage.getItem("company_data");
+  const franchiseType = companyData ? JSON.parse(companyData)?.franchise_type : null;
+  const isRestaurant = user?.role === "restaurant" || franchiseType === 2;
 
   const navGroups = [
     {
@@ -55,7 +70,14 @@ export const DesktopSidebar = ({ collapsed, onToggle }: Props) => {
       label: "Transactions",
       items: [
         { to: "/sales", icon: Receipt, label: "Sales" },
-        { to: "/purchases", icon: BarChart3, label: "Purchases" },
+        ...(isRestaurant
+          ? []
+          : [{ to: "/sales-return", icon: RotateCcw, label: "Sales Return" }]),
+        { to: "/purchases", icon: ShoppingBag, label: "Purchases" },
+        { to: "/purchases-return", icon: RotateCcw, label: "Purchases Return" },
+        { to: "/purchases-payment", icon: HandCoins, label: "Purchases payment" },
+        { to: "/weastage-product", icon: Trash2, label: "Weastage Product" },
+        { to: "/quotaion", icon: FileSpreadsheet, label: "Quotaion" },
       ],
     },
     {
@@ -67,16 +89,37 @@ export const DesktopSidebar = ({ collapsed, onToggle }: Props) => {
         { to: "/vendors", icon: Truck, label: "Vendors" },
         { to: "/employees", icon: UserCheck, label: "Employees" },
         ...(isRestaurant
-          ? []
-          : [{ to: "/tables", icon: Utensils, label: "Tables" }]),
+          ? [{ to: "/tables", icon: Utensils, label: "Tables" }]
+          : []),
       ],
     },
     {
       label: "Finance",
       items: [
-        { to: "/income", icon: ArrowDownCircle, label: "Income" },
-        { to: "/expenses", icon: ArrowUpCircle, label: "Expenses" },
+        { to: "/expance-category", icon: FolderTree, label: "Expance Category" },
+        { to: "/account", icon: Wallet, label: "Account" },
+        { to: "/income", icon: ArrowDownCircle, label: "Transaction" },
         { to: "/attendance", icon: CalendarCheck, label: "Attendance" },
+      ],
+    },
+    {
+      label: "Reports",
+      items: [
+        { to: "/reports/inventory", icon: Boxes, label: "Stock Report" },
+        { to: "/reports/gst", icon: FileText, label: "GST Report" },
+        { to: "/reports/orders", icon: ClipboardList, label: "Order Report" },
+        { to: "/reports/transaction-report", icon: FileText, label: "transaction report" },
+        { to: "/reports/vendor-payment-reminder", icon: HandCoins, label: "vendor-payment-reminder" },
+        { to: "/reports/customer-payment-reminder", icon: HandCoins, label: "customer-payment-reminder" },
+        { to: "/reports/sms", icon: FileText, label: "sms" },
+      ],
+    },
+    // ---- NEW "RANDOM" SECTION ----
+    {
+      label: "Random",
+      items: [
+        { to: "/settings", icon: Settings, label: "Settings" },
+        // add more as needed
       ],
     },
   ];
@@ -88,7 +131,9 @@ export const DesktopSidebar = ({ collapsed, onToggle }: Props) => {
       }`}
     >
       <div
-        className={`flex h-14 items-center border-b border-sidebar-border ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}
+        className={`flex h-14 items-center border-b border-sidebar-border ${
+          collapsed ? "justify-center px-2" : "justify-between px-4"
+        }`}
       >
         {!collapsed && (
           <div className="flex items-center gap-2 min-w-0">
@@ -96,7 +141,7 @@ export const DesktopSidebar = ({ collapsed, onToggle }: Props) => {
               <Layers className="h-4 w-4" />
             </span>
             <span className="font-display text-sm font-bold tracking-tight text-sidebar-accent-foreground truncate">
-              BizBright
+              Trackdesk
             </span>
           </div>
         )}
@@ -159,9 +204,7 @@ export const DesktopSidebar = ({ collapsed, onToggle }: Props) => {
 
       {!collapsed && (
         <div className="border-t border-sidebar-border p-3">
-          <p className="text-[10px] text-sidebar-foreground/50">
-            Version 1.4.0
-          </p>
+          <p className="text-[10px] text-sidebar-foreground/50">Version 1.4.0</p>
         </div>
       )}
     </aside>

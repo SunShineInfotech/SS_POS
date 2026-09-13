@@ -1,59 +1,146 @@
-import { useState } from "react";
+// src/pages/Employees.tsx
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable } from "@/components/shared/DataTable";
-import { initStore, saveStore } from "@/lib/store";
 import { toast } from "sonner";
+import { EmployeeService, Employee } from "@/services/employee.service";
+import { Button } from "@/components/ui/button";
+import { Lock } from "lucide-react";
+import { ChangePasswordModal } from "@/components/shared/ChangePasswordModal";
 
-interface Employee {
-  id: number;
-  name: string;
-  mobile: string;
-  emergencyContact: string;
-  address: string;
-  aadhaar: string;
-  pan: string;
-  franchise: string;
-  status: string;
-  deleted?: boolean;
-}
-
-const initialEmployees: Employee[] = [
-  { id: 1, name: "Ravi Kumar", mobile: "9876500010", emergencyContact: "9876500011", address: "Delhi", aadhaar: "1234-5678-9012", pan: "ABCPK1234A", franchise: "Main Branch", status: "Active" },
-  { id: 2, name: "Sunita Devi", mobile: "9876500012", emergencyContact: "9876500013", address: "Mumbai", aadhaar: "2345-6789-0123", pan: "DEFPL2345B", franchise: "Main Branch", status: "Active" },
-  { id: 3, name: "Manoj Singh", mobile: "9876500014", emergencyContact: "9876500015", address: "Bangalore", aadhaar: "3456-7890-1234", pan: "GHIQM3456C", franchise: "Branch 2", status: "Active" },
-  { id: 4, name: "Anjali Verma", mobile: "9876500016", emergencyContact: "9876500017", address: "Pune", aadhaar: "4567-8901-2345", pan: "JKLRN4567D", franchise: "Branch 2", status: "Inactive" },
-];
-
-const columns = [
-  { key: "name" as const, label: "Name" },
-  { key: "mobile" as const, label: "Mobile", render: (v: any) => <span className="font-display text-xs">{v}</span> },
-  { key: "franchise" as const, label: "Franchise" },
-  { key: "aadhaar" as const, label: "Aadhaar", render: (v: any) => <span className="font-display text-xs">{v}</span> },
-  { key: "pan" as const, label: "PAN", render: (v: any) => <span className="font-display text-xs">{v}</span> },
-  {
-    key: "status" as const,
-    label: "Status",
-    render: (v: any) => (
-      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${v === "Active" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>{v}</span>
-    ),
-  },
-];
+const getCompanyData = () => {
+  const raw = localStorage.getItem("company_data");
+  return raw ? JSON.parse(raw) : null;
+};
 
 const Employees = () => {
   const navigate = useNavigate();
-  const [data, setData] = useState<Employee[]>(() => initStore("employees", initialEmployees));
-  const persist = (next: Employee[]) => { setData(next); saveStore("employees", next); };
+  const [data, setData] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const company = getCompanyData();
+
+  // Change Password modal state
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+
+  const columns = [
+    { key: "employee_name", label: "Name" },
+    { key: "employee_mobile", label: "Mobile" },
+    { key: "employee_email", label: "Email" },
+    { key: "franchise_names", label: "Franchises", render: (v: any) => v || "-" },
+    {
+      key: "employee_salary_monthly",
+      label: "Salary",
+      render: (v: any) => `₹${Number(v || 0).toFixed(2)}`,
+    },
+    {
+      key: "employee_status",
+      label: "Status",
+      render: (v: any) => {
+        const status = Number(v);
+        return (
+          <span
+            className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+              status === 1
+                ? "bg-accent/10 text-accent"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {status === 1 ? "Active" : "Inactive"}
+          </span>
+        );
+      },
+    },
+  ];
+
+  const fetchEmployees = async () => {
+    if (!company) {
+      toast.error("Company data not found");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await EmployeeService.getEmployees(company.company_id);
+      if (res.status === "success" && res.data) {
+        const mapped = res.data.map((item) => ({
+          ...item,
+          id: item.employee_id,
+        }));
+        setData(mapped);
+      } else {
+        toast.error(res.message || "Failed to fetch employees");
+      }
+    } catch (error) {
+      console.error("Error fetching employees:", error);
+      toast.error("Failed to fetch employees.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
+  const handleDelete = async (id: number) => {
+    if (!company) return;
+    try {
+      const res = await EmployeeService.deleteEmployee(id, company.company_id);
+      if (res.status === "success") {
+        setData((prev) => prev.filter((e) => Number(e.employee_id) !== id));
+        toast.success(res.message || "Deleted");
+      } else {
+        toast.error(res.message || "Failed to delete");
+      }
+    } catch (error) {
+      console.error("Error deleting:", error);
+      toast.error("Failed to delete employee.");
+    }
+  };
+
+  const openChangePassword = (employee: Employee) => {
+    setSelectedEmployee(employee);
+    setChangePasswordOpen(true);
+  };
+
+  // Custom actions: Change Password button (lock icon)
+  const customActions = (row: any) => (
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={() => openChangePassword(row)}
+      title="Change Password"
+    >
+      <Lock className="h-4 w-4" />
+    </Button>
+  );
+
+  if (loading) {
+    return <div className="p-8 text-center text-muted-foreground">Loading employees...</div>;
+  }
 
   return (
-    <DataTable
-      data={data}
-      columns={columns}
-      onAdd={() => navigate("/employees/new")}
-      onEdit={(row) => navigate(`/employees/${row.id}/edit`)}
-      onDelete={(id) => { persist(data.map((e) => (e.id === id ? { ...e, deleted: true } : e))); toast.success("Deleted"); }}
-      onRestore={(id) => { persist(data.map((e) => (e.id === id ? { ...e, deleted: false } : e))); toast.success("Restored"); }}
-      addLabel="Add Employee"
-    />
+    <>
+      <DataTable
+        data={data}
+        columns={columns}
+        onAdd={() => navigate("/employees/new")}
+        onEdit={(row) => navigate(`/employees/${row.id}/edit`)}
+        onDelete={(id) => handleDelete(id as number)}
+        addLabel="Add Employee"
+        customActions={customActions}
+      />
+
+      <ChangePasswordModal
+        open={changePasswordOpen}
+        onOpenChange={setChangePasswordOpen}
+        employeeId={Number(selectedEmployee?.employee_id)}
+        employeeName={selectedEmployee?.employee_name || ""}
+        companyId={company?.company_id || ""}
+        onSuccess={fetchEmployees}
+      />
+    </>
   );
 };
 

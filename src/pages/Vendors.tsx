@@ -1,94 +1,83 @@
+// src/pages/Vendors.tsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable } from "@/components/shared/DataTable";
 import { toast } from "sonner";
-import axios from "axios";
+import { VendorService, Vendor } from "@/services/vendor.service";
 
-interface Vendor {
-  id: number;
-  name: string;
-  mobile_no: string;
-  city_name: string;
-  gst_number: string;
-  wallet: number;
-}
-
-const columns = [
-  { key: "name" as const, label: "Name" },
-  { key: "mobile_no" as const, label: "Mobile" },
-  { key: "city_name" as const, label: "City" },
-  { key: "gst_number" as const, label: "GST Number" },
-  {
-    key: "wallet" as const,
-    label: "Wallet",
-    render: (value: any) => `₹${Number(value || 0).toFixed(2)}`,
-  },
-];
-
-const API_URL =
-  import.meta.env.VITE_API_URL || "https://sunshineproduct.in/POS/v1_api/";
-
-const getUserProfile = () =>
-  JSON.parse(localStorage.getItem("company_data") || "{}");
+const getCompanyData = () => {
+  const raw = localStorage.getItem("company_data");
+  return raw ? JSON.parse(raw) : null;
+};
 
 const Vendors = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<Vendor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const company = getCompanyData();
+
+  const columns = [
+    { key: "vendor_name", label: "Name" },
+    { key: "vendor_mobile_no", label: "Mobile" },
+    { key: "vendor_city_name", label: "City", render: (v: any) => v || "-" },
+    { key: "vendor_gst_number", label: "GST Number", render: (v: any) => v || "-" },
+    {
+      key: "vendor_wallet",
+      label: "Wallet",
+      render: (v: any) => `₹${Number(v || 0).toFixed(2)}`,
+    },
+  ];
 
   const fetchVendors = async () => {
+    if (!company) {
+      toast.error("Company data not found");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     try {
-      const userProfile = getUserProfile();
-      const res = await axios.post(`${API_URL}vendor.php`, {
-        type: 2,
-        company_id: userProfile.company_id,
-        franchise_id: userProfile.franchise_id,
-      });
-
-      console.log("Fetch Vendors Response:", res.data);
-      if (res.data.status === "success") {
-        const tempData = res.data.data.map((item: any) => ({
+      const res = await VendorService.getVendors(company.company_id, company.franchise_id);
+      if (res.status === "success" && res.data) {
+        const mapped = res.data.map((item) => ({
+          ...item,
           id: item.vendor_id,
-          name: item.vendor_name,
-          mobile_no: item.vendor_mobile_no,
-          city_name: item.vendor_city_name,
-          gst_number: item.vendor_gst_number,
-          wallet: item.vendor_wallet,
         }));
-        setData(tempData);
+        setData(mapped);
       } else {
-        toast.error(res.data.message || "Failed to fetch vendors");
+        toast.error(res.message || "Failed to fetch vendors");
       }
     } catch (error) {
       console.error("Error fetching vendors:", error);
       toast.error("Failed to fetch vendors. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchVendors();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only once
 
   const handleDelete = async (id: number) => {
-    const userProfile = getUserProfile();
+    if (!company) return;
     try {
-      const res = await axios.post(`${API_URL}vendor.php`, {
-        type: 4,
-        company_id: userProfile.company_id,
-        franchise_id: userProfile.franchise_id,
-        vendor_id: id,
-      });
-
-      if (res.data.status === "success") {
-        setData((prev) => prev.filter((v) => v.id !== id));
-        toast.success(res.data.message || "Deleted");
+      const res = await VendorService.deleteVendor(id, company.company_id, company.franchise_id);
+      if (res.status === "success") {
+        setData((prev) => prev.filter((v) => Number(v.vendor_id) !== id));
+        toast.success(res.message || "Deleted");
       } else {
-        toast.error(res.data.message || "Failed to delete vendor");
+        toast.error(res.message || "Failed to delete");
       }
     } catch (error) {
-      console.error("Error deleting vendor:", error);
-      toast.error("Failed to delete vendor. Please try again.");
+      console.error("Error deleting:", error);
+      toast.error("Failed to delete vendor.");
     }
   };
+
+  if (loading) {
+    return <div className="p-8 text-center text-muted-foreground">Loading vendors...</div>;
+  }
 
   return (
     <DataTable

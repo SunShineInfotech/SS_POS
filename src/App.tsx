@@ -37,96 +37,107 @@ import RestaurantBilling from "./pages/RestaurantBilling";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
+import ExpenseCategories from "./pages/ExpenseCategories";
+import AddExpenseCategory from "./pages/AddExpenseCategory";
+import Accounts from "./pages/Accounts";
+import AddAccount from "./pages/AddAccount";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AppToaster />
-        <BrowserRouter basename="/POS">
-          <AuthProvider>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/restaurant-billing/:tableId"
-                element={
-                  <RequireAuth allow={["restaurant"]}>
-                    <RestaurantBilling />
-                  </RequireAuth>
-                }
-              />
-              <Route
-                element={
-                  <RequireAuth>
-                    <AppLayout />
-                  </RequireAuth>
-                }
-              >
-                <Route path="/" element={<Dashboard />} />
+const App = () => {
+  const basename = import.meta.env.VITE_BASE_PATH || "/interior_designer/build_v1/";
+
+  return (
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AppToaster />
+          <BrowserRouter basename={basename}>
+            <AuthProvider>
+              <Routes>
+                <Route path="/login" element={<Login />} />
                 <Route
-                  path="/pos"
-                  element={
-                    <RequireAuth allow={["shop"]}>
-                      <POS />
-                    </RequireAuth>
-                  }
-                />
-                <Route
-                  path="/restaurant-tables"
+                  path="/restaurant-billing/:tableId"
                   element={
                     <RequireAuth allow={["restaurant"]}>
-                      <RestaurantTables />
+                      <RestaurantBilling />
                     </RequireAuth>
                   }
                 />
-                <Route path="/categories" element={<Categories />} />
-                <Route path="/categories/new" element={<AddCategory />} />
-                <Route path="/categories/:id?" element={<AddCategory />} />
-                <Route path="/products" element={<Products />} />
-                <Route path="/products/new" element={<AddProduct />} />
-                <Route path="/products/:id?" element={<AddProduct />} />
-                <Route path="/customers" element={<Customers />} />
-                <Route path="/customers/new" element={<AddCustomer />} />
-                <Route path="/customers/:id/edit" element={<AddCustomer />} />
-                <Route path="/vendors" element={<Vendors />} />
-                <Route path="/vendors/new" element={<AddVendor />} />
-                <Route path="/vendors/:id?" element={<AddVendor />} />
-                <Route path="/employees" element={<Employees />} />
-                <Route path="/employees/new" element={<AddEmployee />} />
-                <Route path="/employees/:id/edit" element={<AddEmployee />} />
-                <Route path="/tables" element={<Tables />} />
-                <Route path="/tables/new" element={<AddTable />} />
-                <Route path="/tables/:id?" element={<AddTable />} />
-                <Route path="/sales" element={<Sales />} />
-                <Route path="/sales/:id/edit" element={<EditSale />} />
-                <Route path="/purchases" element={<Purchases />} />
-                <Route path="/purchases/new" element={<AddPurchase />} />
-                <Route path="/purchases/:id/edit" element={<AddPurchase />} />
-                <Route path="/income" element={<Income />} />
-                <Route path="/income/new" element={<AddIncome />} />
-                <Route path="/income/:id/edit" element={<AddIncome />} />
-                <Route path="/expenses" element={<Expenses />} />
-                <Route path="/expenses/new" element={<AddExpense />} />
-                <Route path="/expenses/:id/edit" element={<AddExpense />} />
-                <Route path="/attendance" element={<Attendance />} />
-                <Route path="/attendance/new" element={<AddAttendance />} />
                 <Route
-                  path="/attendance/:id/edit"
-                  element={<AddAttendance />}
-                />
-                <Route path="/more" element={<MoreMenu />} />
-                <Route path="/privacy" element={<Privacy />} />
-                <Route path="/terms" element={<Terms />} />
-              </Route>
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </ThemeProvider>
-);
+                  element={
+                    <RequireAuth>
+                      <AppLayout />
+                    </RequireAuth>
+                  }
+                >
+                  <Route path="/" element={<Dashboard />} />
+                  <Route
+                    path="/pos"
+                    element={
+                      <RequireAuth allow={["shop"]}>
+                        <POS />
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/restaurant-tables"
+                    element={
+                      <RequireAuth allow={["restaurant"]}>
+                        <RestaurantTables />
+                      </RequireAuth>
+                    }
+                  />
+                  <Route path="/categories" element={<Categories />} />
+                  <Route path="/categories/new" element={<AddCategory />} />
+                  <Route path="/categories/:id?" element={<AddCategory />} />
+                  <Route path="/products" element={<Products />} />
+                  <Route path="/products/new" element={<AddProduct />} />
+                  <Route path="/products/:id?" element={<AddProduct />} />
+                  <Route path="/customers" element={<Customers />} />
+                  <Route path="/customers/new" element={<AddCustomer />} />
+                  <Route path="/customers/:id/edit" element={<AddCustomer />} />
+                  <Route path="/vendors" element={<Vendors />} />
+                  <Route path="/vendors/new" element={<AddVendor />} />
+                  <Route path="/vendors/:id?" element={<AddVendor />} />
+                  <Route path="/employees" element={<Employees />} />
+                  <Route path="/employees/new" element={<AddEmployee />} />
+                  <Route path="/employees/:id/edit" element={<AddEmployee />} />
+                  <Route path="/tables" element={<Tables />} />
+                  <Route path="/tables/new" element={<AddTable />} />
+                  <Route path="/tables/:id?" element={<AddTable />} />
+                  <Route path="/sales" element={<Sales />} />
+                  <Route path="/sales/:id/edit" element={<EditSale />} />
+                  <Route path="/purchases" element={<Purchases />} />
+                  <Route path="/purchases/new" element={<AddPurchase />} />
+                  <Route path="/purchases/:id/edit" element={<AddPurchase />} />
+                  <Route path="/income" element={<Income />} />
+                  <Route path="/income/new" element={<AddIncome />} />
+                  <Route path="/income/:id/edit" element={<AddIncome />} />
+                  <Route path="/expenses" element={<Expenses />} />
+                  <Route path="/expenses/new" element={<AddExpense />} />
+                  <Route path="/expenses/:id/edit" element={<AddExpense />} />
+                  <Route path="/attendance" element={<Attendance />} />
+                  <Route path="/attendance/new" element={<AddAttendance />} />
+                  <Route path="/attendance/:id/edit" element={<AddAttendance />} />
+                  <Route path="/more" element={<MoreMenu />} />
+                  <Route path="/privacy" element={<Privacy />} />
+                  <Route path="/terms" element={<Terms />} />
+                  <Route path="/expance-category" element={<ExpenseCategories />} />
+                  <Route path="/expance-category/new" element={<AddExpenseCategory />} />
+                  <Route path="/expance-category/:id/edit" element={<AddExpenseCategory />} />
+                  <Route path="/account" element={<Accounts />} />
+                  <Route path="/account/new" element={<AddAccount />} />
+                  <Route path="/account/:id/edit" element={<AddAccount />} />
+                </Route>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
+  );
+};
 
 export default App;

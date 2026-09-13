@@ -1,7 +1,7 @@
 const sections = [
   {
     title: "Information we collect",
-    body: "We collect the business data you enter into BizBright — invoices, customers, vendors, products, staff records and payment entries — along with basic account details such as your username, mobile number and email address.",
+    body: "We collect the business data you enter into Trackdesk — invoices, customers, vendors, products, staff records and payment entries — along with basic account details such as your username, mobile number and email address.",
   },
   {
     title: "How we use your data",
@@ -17,7 +17,7 @@ const sections = [
   },
   {
     title: "Contact",
-    body: "For any privacy question, write to privacy@bizbright.app and our team will respond within 3 working days.",
+    body: "For any privacy question, write to privacy@Trackdesk.app and our team will respond within 3 working days.",
   },
 ];
 
