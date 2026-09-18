@@ -56,10 +56,13 @@ export const AppHeader = () => {
           <Layers className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <h1 className="font-display text-base font-semibold tracking-tight truncate">{title}</h1>
+          <h1 className="font-display text-base font-semibold tracking-tight truncate">
+            {title}
+          </h1>
           {user && (
             <p className="text-[11px] text-muted-foreground -mt-0.5 truncate">
-              {user.shopName} • {user.role === "restaurant" ? "Restaurant Owner" : "Shop Owner"}
+              {user.shopName} •{" "}
+              {user.role === "restaurant" ? "Restaurant Owner" : "Shop Owner"}
             </p>
           )}
         </div>
@@ -80,12 +83,19 @@ export const AppHeader = () => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuLabel className="font-display">Notifications</DropdownMenuLabel>
+            <DropdownMenuLabel className="font-display">
+              Notifications
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {notifications.map((n) => (
-              <DropdownMenuItem key={n.title} className="flex-col items-start gap-0.5 py-2">
+              <DropdownMenuItem
+                key={n.title}
+                className="flex-col items-start gap-0.5 py-2"
+              >
                 <span className="text-xs font-medium">{n.title}</span>
-                <span className="text-[10px] text-muted-foreground">{n.time}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {n.time}
+                </span>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -97,25 +107,39 @@ export const AppHeader = () => {
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-secondary-foreground text-xs font-semibold font-display">
                 {(user?.username || "U").slice(0, 1).toUpperCase()}
               </span>
-              <span className="hidden sm:inline text-xs font-medium max-w-[100px] truncate">{user?.username}</span>
+              <span className="hidden sm:inline text-xs font-medium max-w-[100px] truncate">
+                {user?.username}
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="flex flex-col gap-0.5">
               <span className="font-display text-sm">{user?.username}</span>
               <span className="text-[11px] font-normal text-muted-foreground">
-                {user?.role === "restaurant" ? "Restaurant Owner" : "Shop Owner"} • FY {user?.financialYear || "2025-26"}
+                {user?.role === "restaurant"
+                  ? "Restaurant Owner"
+                  : "Shop Owner"}{" "}
+                • FY {user?.financialYear || "2025-26"}
               </span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/more")} className="gap-2 text-xs">
+            <DropdownMenuItem
+              onClick={() => navigate("/more")}
+              className="gap-2 text-xs"
+            >
               <UserIcon className="h-3.5 w-3.5" /> Profile & Account
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/more")} className="gap-2 text-xs">
+            <DropdownMenuItem
+              onClick={() => navigate("/more")}
+              className="gap-2 text-xs"
+            >
               <Settings className="h-3.5 w-3.5" /> Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="gap-2 text-xs text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              onClick={handleLogout}
+              className="gap-2 text-xs text-destructive focus:text-destructive"
+            >
               <LogOut className="h-3.5 w-3.5" /> Logout
             </DropdownMenuItem>
           </DropdownMenuContent>

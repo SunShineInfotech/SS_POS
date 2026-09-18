@@ -16,7 +16,7 @@ const Products = () => {
   const company = getCompanyData();
   const franchiseType = company?.franchise_type || 1;
 
-  const columns = [
+  const columns: any = [
     { key: "product_name", label: "Name" },
     {
       key: "category_name",

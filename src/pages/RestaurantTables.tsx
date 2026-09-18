@@ -54,9 +54,12 @@ const RestaurantTables = () => {
       }
 
       try {
-        const res = await TableService.getTables(company.company_id, company.franchise_id);
+        const res = await TableService.getTables(
+          company.company_id,
+          company.franchise_id,
+        );
         if (res.status === "success" && res.data) {
-          const mapped = res.data.map((t) => {
+          const mapped: any = res.data.map((t) => {
             const isParcel =
               t.table_no.toLowerCase().startsWith("p") ||
               t.table_no.toLowerCase().includes("parcel");
@@ -92,7 +95,9 @@ const RestaurantTables = () => {
   const counts = {
     free: tables.filter((t) => t.status === "Free").length,
     booked: tables.filter((t) => t.status === "Booked").length,
-    packed: tables.filter((t) => t.status === "Packed" || t.status === "Out of Service").length,
+    packed: tables.filter(
+      (t) => t.status === "Packed" || t.status === "Out of Service",
+    ).length,
   };
 
   const openTable = (t: RestaurantTable) => {
@@ -100,7 +105,11 @@ const RestaurantTables = () => {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading tables...</div>;
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Loading tables...
+      </div>
+    );
   }
 
   if (error) {
@@ -131,15 +140,21 @@ const RestaurantTables = () => {
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4 border-l-4 border-l-success bg-gradient-to-br from-success/5 to-transparent">
           <p className="text-xs text-muted-foreground">Free</p>
-          <p className="font-display text-2xl font-bold text-success">{counts.free}</p>
+          <p className="font-display text-2xl font-bold text-success">
+            {counts.free}
+          </p>
         </Card>
         <Card className="p-4 border-l-4 border-l-destructive bg-gradient-to-br from-destructive/5 to-transparent">
           <p className="text-xs text-muted-foreground">Booked</p>
-          <p className="font-display text-2xl font-bold text-destructive">{counts.booked}</p>
+          <p className="font-display text-2xl font-bold text-destructive">
+            {counts.booked}
+          </p>
         </Card>
         <Card className="p-4 border-l-4 border-l-warning bg-gradient-to-br from-warning/10 to-transparent">
           <p className="text-xs text-muted-foreground">Packed / OOS</p>
-          <p className="font-display text-2xl font-bold text-warning">{counts.packed}</p>
+          <p className="font-display text-2xl font-bold text-warning">
+            {counts.packed}
+          </p>
         </Card>
       </div>
 
@@ -151,7 +166,9 @@ const RestaurantTables = () => {
               <UtensilsCrossed className="h-4 w-4 text-primary" />
               Dine-In Tables
             </h2>
-            <Badge variant="outline" className="text-[10px]">{dine.length} tables</Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {dine.length} tables
+            </Badge>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {dine.map((t) => (
@@ -162,9 +179,13 @@ const RestaurantTables = () => {
               >
                 <div className="flex items-start justify-between">
                   <UtensilsCrossed className="h-5 w-5 opacity-70" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{t.status}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider">
+                    {t.status}
+                  </span>
                 </div>
-                <p className="font-display text-base font-bold mt-3">{t.name}</p>
+                <p className="font-display text-base font-bold mt-3">
+                  {t.name}
+                </p>
                 <p className="text-[11px] flex items-center gap-1 mt-1 opacity-80">
                   <Users className="h-3 w-3" /> {t.capacity} seats
                 </p>
@@ -182,7 +203,9 @@ const RestaurantTables = () => {
               <ShoppingBag className="h-4 w-4 text-accent" />
               Parcel / Takeaway
             </h2>
-            <Badge variant="outline" className="text-[10px]">{parcel.length} counters</Badge>
+            <Badge variant="outline" className="text-[10px]">
+              {parcel.length} counters
+            </Badge>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {parcel.map((t) => (
@@ -193,9 +216,13 @@ const RestaurantTables = () => {
               >
                 <div className="flex items-start justify-between">
                   <Package className="h-5 w-5 opacity-70" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{t.status}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider">
+                    {t.status}
+                  </span>
                 </div>
-                <p className="font-display text-base font-bold mt-3">{t.name}</p>
+                <p className="font-display text-base font-bold mt-3">
+                  {t.name}
+                </p>
                 <p className="text-[11px] mt-1 opacity-80">Takeaway counter</p>
               </button>
             ))}

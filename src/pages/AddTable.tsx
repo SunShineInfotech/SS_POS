@@ -79,7 +79,7 @@ const AddTable = () => {
     const loadFranchises = async () => {
       if (!company) return;
       try {
-        const res = await apiClient.post('/franchise.php', {
+        const res = await apiClient.post("/franchise.php", {
           type: 2,
           company_id: company.company_id,
           franchise_id: company.franchise_id, // restrict to this franchise
@@ -118,7 +118,7 @@ const AddTable = () => {
       const res = await TableService.getTable(
         Number(id),
         company.company_id,
-        company.franchise_id
+        company.franchise_id,
       );
       if (res.status === "success" && res.data) {
         const t = res.data;
@@ -161,7 +161,7 @@ const AddTable = () => {
 
     setSaving(true);
     try {
-      const payload = {
+      const payload: any = {
         company_id: company.company_id,
         franchise_id: Number(form.franchise_id),
         table_no: form.table_no.trim(),
@@ -185,7 +185,8 @@ const AddTable = () => {
     } catch (err: any) {
       console.error("Error saving table:", err);
       toast.error(
-        err?.response?.data?.message || "Failed to save table. Please try again."
+        err?.response?.data?.message ||
+          "Failed to save table. Please try again.",
       );
     } finally {
       setSaving(false);
@@ -337,7 +338,12 @@ const AddTable = () => {
           </CardContent>
 
           <CardFooter className="justify-end gap-2 border-t border-border pt-5">
-            <Button type="button" variant="outline" onClick={handleCancel} disabled={saving}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancel}
+              disabled={saving}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving} className="min-w-[110px]">

@@ -28,7 +28,12 @@ import { toast } from "sonner";
 import { AuthService } from "@/services/auth.service";
 import { Franchise } from "@/services/auth.types";
 
-const FINANCIAL_YEARS = ["2026-27", "2025-26", "2024-25", "2023-24"];
+const FINANCIAL_YEARS = [
+  { key: 1, value: "2026-27" },
+  { key: 2, value: "2025-26" },
+  { key: 3, value: "2024-25" },
+  { key: 4, value: "2023-24" },
+];
 
 const Login = () => {
   const navigate = useNavigate();
@@ -44,7 +49,10 @@ const Login = () => {
 
   // ----- Role & Financial Year -----
   const [role, setRole] = useState<Role>("shop");
-  const [financialYear, setFinancialYear] = useState(FINANCIAL_YEARS[0]);
+  const [financialYear, setFinancialYear] = useState({
+    key: FINANCIAL_YEARS[0].key,
+    value: FINANCIAL_YEARS[0].value,
+  });
 
   // ----- Password mode -----
   const [MobileNumber, setMobileNumber] = useState("");
@@ -74,7 +82,8 @@ const Login = () => {
         setRenewalMessage(res.renewal_message);
 
         // Auto‑set role based on franchise_type
-        const autoRole: Role = company.franchise_type === 1 ? "shop" : "restaurant";
+        const autoRole: Role =
+          company.franchise_type === 1 ? "shop" : "restaurant";
         setRole(autoRole);
 
         setCompanyVerified(true);
@@ -97,7 +106,9 @@ const Login = () => {
       }
     } catch (err: any) {
       console.error("Company verification error:", err);
-      toast.error(err.response?.data?.message || "Error verifying company code");
+      toast.error(
+        err.response?.data?.message || "Error verifying company code",
+      );
     }
   };
 
@@ -113,12 +124,13 @@ const Login = () => {
     company: Franchise,
     franchiseType: 1 | 2,
     renewalExpired: boolean,
-    renewalMessage: string
+    renewalMessage: string,
   ) => {
     // Store token and user
     localStorage.setItem("token", token);
     localStorage.setItem("user_data", JSON.stringify(userData));
     localStorage.setItem("company_data", JSON.stringify(company));
+    localStorage.setItem("financial_year", JSON.stringify(financialYear));
 
     // Update AuthContext
     const role: Role = franchiseType === 1 ? "shop" : "restaurant";
@@ -128,7 +140,7 @@ const Login = () => {
       shopName: role === "shop" ? company.franchise_name : "Restaurant",
       mobile: userData.employee_mobile,
       email: userData.email,
-      financialYear,
+      financialYear: financialYear,
     });
 
     toast.success("Login successful", {
@@ -157,7 +169,7 @@ const Login = () => {
       const res = await AuthService.loginWithPassword(
         companyCode.trim(),
         MobileNumber.trim(),
-        password.trim()
+        password.trim(),
       );
 
       if (res.status === "success" && res.token && res.user && res.company) {
@@ -167,7 +179,7 @@ const Login = () => {
           res.company,
           res.franchise_type,
           res.renewal_expired,
-          res.renewal_message
+          res.renewal_message,
         );
       } else {
         toast.error(res.message || "Invalid credentials");
@@ -220,7 +232,7 @@ const Login = () => {
       const res = await AuthService.verifyOtp(
         companyCode.trim(),
         mobile.trim(),
-        otpCode
+        otpCode,
       );
 
       if (res.status === "success" && res.token && res.user && res.company) {
@@ -230,7 +242,7 @@ const Login = () => {
           res.company,
           res.franchise_type,
           res.renewal_expired,
-          res.renewal_message
+          res.renewal_message,
         );
       } else {
         toast.error(res.message || "Invalid OTP");
@@ -252,7 +264,10 @@ const Login = () => {
     if (digit && idx < 5) otpRefs.current[idx + 1]?.focus();
   };
 
-  const onOtpKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onOtpKeyDown = (
+    idx: number,
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
     if (e.key === "Backspace" && !otp[idx] && idx > 0) {
       otpRefs.current[idx - 1]?.focus();
     }
@@ -271,7 +286,11 @@ const Login = () => {
       {/* Brand panel (desktop) */}
       <div className="hidden lg:flex w-[46%] flex-col justify-between p-10 bg-gradient-cool text-primary-foreground">
         <div className="flex items-center gap-2.5">
-          <img src="images/logo/SunShine-tra.png" style={{ width: '30%' }} alt="SunShine Logo" />
+          <img
+            src="images/logo/SunShine-tra.png"
+            style={{ width: "30%" }}
+            alt="SunShine Logo"
+          />
         </div>
         <div className="space-y-4 max-w-md">
           <h2 className="font-display text-3xl font-extrabold leading-tight">
@@ -328,12 +347,16 @@ const Login = () => {
                 // --- Step 1: Company Code gate ---
                 <form onSubmit={submitCompanyCode} className="space-y-4">
                   <div>
-                    <Label className="text-xs font-semibold">Company Code</Label>
+                    <Label className="text-xs font-semibold">
+                      Company Code
+                    </Label>
                     <div className="relative mt-1">
                       <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         value={companyCode}
-                        onChange={(e) => setCompanyCode(e.target.value.toUpperCase())}
+                        onChange={(e) =>
+                          setCompanyCode(e.target.value.toUpperCase())
+                        }
                         placeholder="e.g. BIZ2026"
                         className="pl-9 font-display tracking-wide"
                         autoFocus
@@ -372,8 +395,12 @@ const Login = () => {
                           : "border-border"
                       }`}
                     >
-                      <Store className={`h-5 w-5 ${role === "shop" ? "text-primary" : "text-muted-foreground"}`} />
-                      <span className={`text-xs font-medium ${role === "shop" ? "text-primary" : ""}`}>
+                      <Store
+                        className={`h-5 w-5 ${role === "shop" ? "text-primary" : "text-muted-foreground"}`}
+                      />
+                      <span
+                        className={`text-xs font-medium ${role === "shop" ? "text-primary" : ""}`}
+                      >
                         Shop Owner
                       </span>
                     </div>
@@ -384,8 +411,12 @@ const Login = () => {
                           : "border-border"
                       }`}
                     >
-                      <UtensilsCrossed className={`h-5 w-5 ${role === "restaurant" ? "text-accent" : "text-muted-foreground"}`} />
-                      <span className={`text-xs font-medium ${role === "restaurant" ? "text-accent" : ""}`}>
+                      <UtensilsCrossed
+                        className={`h-5 w-5 ${role === "restaurant" ? "text-accent" : "text-muted-foreground"}`}
+                      />
+                      <span
+                        className={`text-xs font-medium ${role === "restaurant" ? "text-accent" : ""}`}
+                      >
                         Restaurant Owner
                       </span>
                     </div>
@@ -396,16 +427,28 @@ const Login = () => {
 
                   {/* Financial Year */}
                   <div>
-                    <Label className="text-xs font-semibold">Financial Year</Label>
-                    <Select value={financialYear} onValueChange={setFinancialYear}>
+                    <Label className="text-xs font-semibold">
+                      Financial Year
+                    </Label>
+                    <Select
+                      value={financialYear.value}
+                      onValueChange={(value) => {
+                        const year = FINANCIAL_YEARS.find(
+                          (fy) => fy.value === value,
+                        );
+                        if (year) {
+                          setFinancialYear(year);
+                        }
+                      }}
+                    >
                       <SelectTrigger className="mt-1">
                         <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {FINANCIAL_YEARS.map((fy) => (
-                          <SelectItem key={fy} value={fy}>
-                            FY {fy}
+                          <SelectItem key={fy.key} value={fy.value}>
+                            FY {fy.value}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -433,7 +476,9 @@ const Login = () => {
                   {mode === "password" ? (
                     <form onSubmit={submitPassword} className="space-y-4">
                       <div>
-                        <Label className="text-xs font-semibold">Mobile Number</Label>
+                        <Label className="text-xs font-semibold">
+                          Mobile Number
+                        </Label>
                         <div className="relative mt-1">
                           <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
@@ -445,7 +490,9 @@ const Login = () => {
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs font-semibold">Password</Label>
+                        <Label className="text-xs font-semibold">
+                          Password
+                        </Label>
                         <div className="relative mt-1">
                           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
@@ -458,7 +505,8 @@ const Login = () => {
                         </div>
                       </div>
                       <Button type="submit" className="w-full font-display">
-                        Login as {role === "shop" ? "Shop Owner" : "Restaurant Owner"}
+                        Login as{" "}
+                        {role === "shop" ? "Shop Owner" : "Restaurant Owner"}
                       </Button>
                       <button
                         type="button"
@@ -481,14 +529,18 @@ const Login = () => {
                       className="space-y-4"
                     >
                       <div>
-                        <Label className="text-xs font-semibold">Mobile Number</Label>
+                        <Label className="text-xs font-semibold">
+                          Mobile Number
+                        </Label>
                         <div className="relative mt-1">
                           <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
                             inputMode="numeric"
                             value={mobile}
                             onChange={(e) =>
-                              setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))
+                              setMobile(
+                                e.target.value.replace(/\D/g, "").slice(0, 10),
+                              )
                             }
                             placeholder="10-digit mobile"
                             className="pl-9 font-display tracking-wide"
@@ -498,7 +550,9 @@ const Login = () => {
 
                       {otpSent && (
                         <div className="space-y-2">
-                          <Label className="text-xs font-semibold">Enter 6-digit OTP</Label>
+                          <Label className="text-xs font-semibold">
+                            Enter 6-digit OTP
+                          </Label>
                           <div className="flex gap-2">
                             {otp.map((d, i) => (
                               <input

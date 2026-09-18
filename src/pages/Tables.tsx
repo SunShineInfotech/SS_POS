@@ -23,7 +23,7 @@ const Tables = () => {
   const [loading, setLoading] = useState(true);
   const company = getCompanyData();
 
-  const columns = [
+  const columns: any = [
     { key: "table_no", label: "Table No" },
     { key: "franchise_name", label: "Franchise", render: (v: any) => v || "-" },
     {
@@ -55,7 +55,10 @@ const Tables = () => {
     }
     setLoading(true);
     try {
-      const res = await TableService.getTables(company.company_id, company.franchise_id);
+      const res = await TableService.getTables(
+        company.company_id,
+        company.franchise_id,
+      );
       if (res.status === "success" && res.data) {
         const mapped = res.data.map((item) => ({
           ...item,
@@ -80,7 +83,11 @@ const Tables = () => {
   const handleDelete = async (id: number) => {
     if (!company) return;
     try {
-      const res = await TableService.deleteTable(id, company.company_id, company.franchise_id);
+      const res = await TableService.deleteTable(
+        id,
+        company.company_id,
+        company.franchise_id,
+      );
       if (res.status === "success") {
         setData((prev) => prev.filter((t) => Number(t.table_id) !== id));
         toast.success(res.message || "Deleted");
@@ -94,7 +101,11 @@ const Tables = () => {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading tables...</div>;
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Loading tables...
+      </div>
+    );
   }
 
   return (

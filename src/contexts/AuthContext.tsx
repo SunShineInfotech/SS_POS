@@ -14,7 +14,7 @@ export interface AuthUser {
   shopName?: string;
   mobile?: string;
   email?: string;
-  financialYear?: string;
+  financialYear?: { key: number; value: string };
 }
 
 interface AuthContextValue {

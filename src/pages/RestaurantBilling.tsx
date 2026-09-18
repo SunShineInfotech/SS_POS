@@ -4,18 +4,50 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
-  ArrowLeft, Search, Plus, Minus, X, Save, Printer, CreditCard, Receipt, Pause, ListOrdered, Clock,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  ArrowLeft,
+  Search,
+  Plus,
+  Minus,
+  X,
+  Save,
+  Printer,
+  CreditCard,
+  Receipt,
+  Pause,
+  ListOrdered,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { loadStore, saveStore } from "@/lib/store";
+import { ProductService } from "@/services/product.service";
+import { SellService } from "@/services/sell.service";
 
 interface Product {
-  id: number; name: string; price: number; category: string;
+  id: number;
+  name: string;
+  final_amount: number;
+  category_name: string;
+  cgst: number;
+  sgst: number;
+  stock: number;
 }
-interface CartItem extends Product { qty: number; }
+interface CartItem extends Product {
+  qty: number;
+}
 
 interface HeldBill {
   id: number;
@@ -31,30 +63,26 @@ interface HeldBill {
 
 const HOLD_KEY = "restaurant-holds";
 
-const sampleProducts: Product[] = [
-  { id: 1, name: "Masala Dosa", price: 120, category: "Food" },
-  { id: 2, name: "Paneer Tikka", price: 220, category: "Food" },
-  { id: 3, name: "Butter Naan", price: 45, category: "Food" },
-  { id: 4, name: "Dal Makhani", price: 180, category: "Food" },
-  { id: 5, name: "Mango Lassi", price: 80, category: "Drinks" },
-  { id: 6, name: "Cold Coffee", price: 120, category: "Drinks" },
-  { id: 7, name: "Fresh Lime Soda", price: 60, category: "Drinks" },
-  { id: 8, name: "Gulab Jamun", price: 90, category: "Dessert" },
-  { id: 9, name: "Veg Biryani", price: 200, category: "Food" },
-  { id: 10, name: "Chicken Tikka", price: 280, category: "Food" },
-  { id: 11, name: "Tandoori Roti", price: 30, category: "Food" },
-  { id: 12, name: "Raita", price: 50, category: "Food" },
-];
+const roundOff = (v: number) =>
+  v - Math.floor(v) < 0.5 ? Math.floor(v) : Math.ceil(v);
 
-const categories = ["All", ...Array.from(new Set(sampleProducts.map((p) => p.category)))];
-const roundOff = (v: number) => (v - Math.floor(v) < 0.5 ? Math.floor(v) : Math.ceil(v));
+const getUserProfile = () =>
+  JSON.parse(localStorage.getItem("company_data") || "{}");
 
 const RestaurantBilling = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { tableId } = useParams();
-  const table = (location.state as any)?.table || { name: tableId, status: "Free" };
+  const table = (location.state as any)?.table || {
+    name: tableId,
+    status: "Free",
+  };
 
+  const [productData, setProductData] = useState<Product[]>([]);
+  const categories = [
+    "All",
+    ...Array.from(new Set(productData.map((p) => p.category_name))),
+  ];
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("All");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -62,6 +90,7 @@ const RestaurantBilling = () => {
   const [paid, setPaid] = useState(0);
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [printed, setPrinted] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Customer + discount
   const [customerMobile, setCustomerMobile] = useState("");
@@ -70,25 +99,63 @@ const RestaurantBilling = () => {
   const [discountValue, setDiscountValue] = useState(0);
 
   // Hold list
-  const [holds, setHolds] = useState<HeldBill[]>(() => loadStore<HeldBill>(HOLD_KEY, []));
+  const [holds, setHolds] = useState<HeldBill[]>(() =>
+    loadStore<HeldBill>(HOLD_KEY, []),
+  );
   const [holdListOpen, setHoldListOpen] = useState(false);
   const [resumedId, setResumedId] = useState<number | null>(null);
 
-  useEffect(() => { saveStore(HOLD_KEY, holds); }, [holds]);
+  // Get the Product details
+  const fetchProducts = async () => {
+    try {
+      const userProfile = getUserProfile();
+      const res = await ProductService.getProducts(
+        userProfile.company_id,
+        userProfile.franchise_id,
+      );
+
+      console.log("Fetch Products Response:", res.data);
+      if (res.status === "success") {
+        const tempData: any = res.data.map((item: any) => ({
+          id: item.product_id,
+          name: item.product_name,
+          category_name: item.category_name,
+          final_amount: item.product_final_amount,
+          cgst: Number(item.product_cgst) || 0,
+          sgst: Number(item.product_sgst) || 0,
+          stock: Number(item.product_stock) || 0,
+          is_active: item.product_is_active,
+        }));
+        setProductData(tempData);
+      } else {
+        toast.error(res.message || "Failed to fetch products");
+      }
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      toast.error("Failed to fetch products. Please try again.");
+    }
+  };
+
+  useEffect(() => {
+    console.log("Table ID from params:", tableId);
+    saveStore(HOLD_KEY, holds);
+    fetchProducts();
+  }, [holds]);
 
   const filtered = useMemo(
     () =>
-      sampleProducts.filter(
+      productData.filter(
         (p) =>
           p.name.toLowerCase().includes(search.toLowerCase()) &&
-          (cat === "All" || p.category === cat)
+          (cat === "All" || p.category_name === cat),
       ),
-    [search, cat]
+    [search, cat, productData],
   );
 
-  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const subtotal = cart.reduce((s, i) => s + i.final_amount * i.qty, 0);
   const discountAmount = useMemo(() => {
-    const raw = discountType === "%" ? (subtotal * discountValue) / 100 : discountValue;
+    const raw =
+      discountType === "%" ? (subtotal * discountValue) / 100 : discountValue;
     return Math.min(Math.max(raw || 0, 0), subtotal);
   }, [discountType, discountValue, subtotal]);
   const total = roundOff(subtotal - discountAmount);
@@ -98,11 +165,13 @@ const RestaurantBilling = () => {
     setCart((c) =>
       c.find((x) => x.id === p.id)
         ? c.map((x) => (x.id === p.id ? { ...x, qty: x.qty + 1 } : x))
-        : [...c, { ...p, qty: 1 }]
+        : [...c, { ...p, qty: 1 }],
     );
   const updateQty = (id: number, d: number) =>
     setCart((c) =>
-      c.map((x) => (x.id === id ? { ...x, qty: Math.max(0, x.qty + d) } : x)).filter((x) => x.qty > 0)
+      c
+        .map((x) => (x.id === id ? { ...x, qty: Math.max(0, x.qty + d) } : x))
+        .filter((x) => x.qty > 0),
     );
 
   const clearBill = () => {
@@ -157,12 +226,78 @@ const RestaurantBilling = () => {
     setCheckoutOpen(true);
   };
 
-  const handlePrint = () => {
-    setPrinted(true);
-    toast.success("Bill printed");
-    setTimeout(() => {
-      navigate("/restaurant-tables");
-    }, 600);
+  const handlePrint = async () => {
+    const userProfile = getUserProfile();
+    const financialYearRaw = localStorage.getItem("financial_year");
+    const financialYear = financialYearRaw
+      ? JSON.parse(financialYearRaw)
+      : null;
+
+    if (!userProfile?.company_id || !userProfile?.franchise_id) {
+      toast.error("Company data missing. Please sign in again.");
+      return;
+    }
+    if (!financialYear?.key) {
+      toast.error("Financial year not set. Please sign in again.");
+      return;
+    }
+    if (!cart.length) {
+      toast.error("Cart is empty");
+      return;
+    }
+
+    // Bill-level discount is spread across items proportionally so each
+    // line's stored total roughly reflects its share of the overall discount.
+    const items = cart.map((i) => {
+      const lineAmount = i.final_amount * i.qty;
+      const lineShare = subtotal > 0 ? lineAmount / subtotal : 0;
+      const lineDiscount = discountAmount * lineShare;
+
+      return {
+        product_id: i.id,
+        single_product_price: i.final_amount,
+        qty: i.qty,
+        cgst: i.cgst,
+        sgst: i.sgst,
+        available_stock: i.stock,
+        discount_type: "₹" as const,
+        discount: Number(lineDiscount.toFixed(2)),
+      };
+    });
+
+    setSaving(true);
+    try {
+      const res = await SellService.createSell({
+        company_id: userProfile.company_id,
+        franchise_id: userProfile.franchise_id,
+        sell_financial_year_id: financialYear.key,
+        sell_date: new Date().toISOString().split("T")[0],
+        sell_table_id: tableId,
+        sell_total_amount: total,
+        sell_total_discount_amount: discountAmount,
+        sales_total_paid_amount: paid,
+        sales_total_remainng_amount: balance,
+        customer_mobile: customerMobile,
+        customer_name: customerName || "Walk-in",
+        payment_mode: paymentMode,
+        items,
+      });
+
+      if (res.status === "success") {
+        setPrinted(true);
+        toast.success(`Bill saved — ${res.sell_bill_number}`);
+        setTimeout(() => {
+          navigate("/restaurant-tables");
+        }, 600);
+      } else {
+        toast.error(res.message || "Failed to save bill");
+      }
+    } catch (error) {
+      console.error("Error saving bill:", error);
+      toast.error("Failed to save bill. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const HoldList = (
@@ -180,14 +315,24 @@ const RestaurantBilling = () => {
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-display text-sm font-semibold truncate">{h.tableName}</p>
-                <p className="text-xs text-muted-foreground truncate">{h.customerName}{h.customerMobile ? ` · ${h.customerMobile}` : ""}</p>
+                <p className="font-display text-sm font-semibold truncate">
+                  {h.tableName}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {h.customerName}
+                  {h.customerMobile ? ` · ${h.customerMobile}` : ""}
+                </p>
                 <p className="flex items-center gap-1 text-[11px] text-muted-foreground mt-1">
                   <Clock className="h-3 w-3" />
-                  {new Date(h.heldAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {new Date(h.heldAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </p>
               </div>
-              <span className="font-display text-sm font-bold text-primary shrink-0">₹{h.amount}</span>
+              <span className="font-display text-sm font-bold text-primary shrink-0">
+                ₹{h.amount}
+              </span>
             </div>
           </button>
         ))
@@ -200,18 +345,31 @@ const RestaurantBilling = () => {
       {/* Header */}
       <header className="flex items-center justify-between px-3 md:px-4 h-14 border-b bg-card">
         <div className="flex items-center gap-2 min-w-0">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/restaurant-tables")} className="h-8 w-8">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/restaurant-tables")}
+            className="h-8 w-8"
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="min-w-0">
-            <p className="font-display text-sm font-bold truncate">{table.name}</p>
-            <p className="text-[10px] text-muted-foreground">Order in progress</p>
+            <p className="font-display text-sm font-bold truncate">
+              {table.name}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              Order in progress
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Sheet open={holdListOpen} onOpenChange={setHoldListOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 relative">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs h-8 relative"
+              >
                 <ListOrdered className="h-3.5 w-3.5" />
                 Hold List
                 {holds.length > 0 && (
@@ -221,7 +379,10 @@ const RestaurantBilling = () => {
                 )}
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-full sm:max-w-sm overflow-y-auto">
+            <SheetContent
+              side="right"
+              className="w-full sm:max-w-sm overflow-y-auto"
+            >
               <SheetHeader>
                 <SheetTitle className="font-display">Held Bills</SheetTitle>
               </SheetHeader>
@@ -230,7 +391,9 @@ const RestaurantBilling = () => {
           </Sheet>
           <div className="text-right">
             <p className="text-[10px] text-muted-foreground">Total</p>
-            <p className="font-display text-base font-bold text-primary">₹{total}</p>
+            <p className="font-display text-base font-bold text-primary">
+              ₹{total}
+            </p>
           </div>
         </div>
       </header>
@@ -254,7 +417,9 @@ const RestaurantBilling = () => {
                   key={c}
                   onClick={() => setCat(c)}
                   className={`shrink-0 px-3 py-1.5 rounded-md text-xs font-medium ${
-                    cat === c ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+                    cat === c
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-secondary-foreground"
                   }`}
                 >
                   {c}
@@ -264,17 +429,27 @@ const RestaurantBilling = () => {
           </div>
           <div className="flex-1 overflow-y-auto p-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {filtered.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => add(p)}
-                  className="text-left p-3 rounded-lg border bg-card hover:border-primary hover:shadow-md transition-all"
-                >
-                  <p className="text-sm font-medium truncate">{p.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{p.category}</p>
-                  <p className="font-display text-sm font-bold mt-2 text-primary">₹{p.price}</p>
-                </button>
-              ))}
+              {filtered.length == 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No products found
+                </p>
+              ) : (
+                filtered.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => add(p)}
+                    className="text-left p-3 rounded-lg border bg-card hover:border-primary hover:shadow-md transition-all"
+                  >
+                    <p className="text-sm font-medium truncate">{p.name}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {p.category_name}
+                    </p>
+                    <p className="font-display text-sm font-bold mt-2 text-primary">
+                      ₹ {p.final_amount}
+                    </p>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -282,10 +457,14 @@ const RestaurantBilling = () => {
         {/* Cart */}
         <div className="w-full md:max-w-sm flex flex-col bg-card max-h-[60vh] md:max-h-none overflow-y-auto md:overflow-hidden">
           <div className="p-3 border-b space-y-2">
-            <p className="font-display text-sm font-bold">Cart ({cart.length})</p>
+            <p className="font-display text-sm font-bold">
+              Cart ({cart.length})
+            </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="text-[10px] text-muted-foreground">Customer Mobile No</Label>
+                <Label className="text-[10px] text-muted-foreground">
+                  Customer Mobile No
+                </Label>
                 <Input
                   value={customerMobile}
                   onChange={(e) => setCustomerMobile(e.target.value)}
@@ -296,7 +475,9 @@ const RestaurantBilling = () => {
                 />
               </div>
               <div>
-                <Label className="text-[10px] text-muted-foreground">Customer Name</Label>
+                <Label className="text-[10px] text-muted-foreground">
+                  Customer Name
+                </Label>
                 <Input
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
@@ -319,23 +500,40 @@ const RestaurantBilling = () => {
                     <div className="flex items-start justify-between mb-1.5">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{i.name}</p>
-                        <p className="text-[11px] text-muted-foreground">₹{i.price} × {i.qty}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          ₹{i.final_amount} × {i.qty}
+                        </p>
                       </div>
-                      <button onClick={() => setCart((c) => c.filter((x) => x.id !== i.id))} className="text-muted-foreground">
+                      <button
+                        onClick={() =>
+                          setCart((c) => c.filter((x) => x.id !== i.id))
+                        }
+                        className="text-muted-foreground"
+                      >
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center border rounded-md">
-                        <button onClick={() => updateQty(i.id, -1)} className="p-1.5 hover:bg-muted">
+                        <button
+                          onClick={() => updateQty(i.id, -1)}
+                          className="p-1.5 hover:bg-muted"
+                        >
                           <Minus className="h-3 w-3" />
                         </button>
-                        <span className="px-3 text-xs font-display font-semibold">{i.qty}</span>
-                        <button onClick={() => updateQty(i.id, 1)} className="p-1.5 hover:bg-muted">
+                        <span className="px-3 text-xs font-display font-semibold">
+                          {i.qty}
+                        </span>
+                        <button
+                          onClick={() => updateQty(i.id, 1)}
+                          className="p-1.5 hover:bg-muted"
+                        >
                           <Plus className="h-3 w-3" />
                         </button>
                       </div>
-                      <span className="font-display text-sm font-bold">₹{i.price * i.qty}</span>
+                      <span className="font-display text-sm font-bold">
+                        ₹{i.final_amount * i.qty}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -347,7 +545,9 @@ const RestaurantBilling = () => {
           <div className="border-t p-3 space-y-2 bg-muted/30">
             {/* Discount */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground flex-1">Discount</span>
+              <span className="text-xs text-muted-foreground flex-1">
+                Discount
+              </span>
               <div className="inline-flex rounded-md border border-border overflow-hidden">
                 {(["%", "₹"] as const).map((t) => (
                   <button
@@ -355,7 +555,9 @@ const RestaurantBilling = () => {
                     type="button"
                     onClick={() => setDiscountType(t)}
                     className={`px-2.5 py-1 text-[11px] font-display font-semibold transition-colors ${
-                      discountType === t ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-muted"
+                      discountType === t
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-card text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     {t}
@@ -378,22 +580,35 @@ const RestaurantBilling = () => {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Discount Amount</span>
-              <span className="font-display text-success">-₹{discountAmount.toFixed(2)}</span>
+              <span className="font-display text-success">
+                -₹{discountAmount.toFixed(2)}
+              </span>
             </div>
             <div className="flex justify-between font-bold text-base border-t pt-2">
               <span>Final Payable</span>
               <span className="font-display text-primary">₹{total}</span>
             </div>
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              <Button variant="outline" onClick={handleHold} className="font-display text-xs gap-1">
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <Button
+                variant="outline"
+                onClick={handleHold}
+                className="font-display text-xs gap-1"
+              >
                 <Pause className="h-3.5 w-3.5" />
                 Hold
               </Button>
-              <Button variant="outline" onClick={handleSave} className="font-display text-xs gap-1">
+              {/* <Button
+                variant="outline"
+                onClick={handleSave}
+                className="font-display text-xs gap-1"
+              >
                 <Save className="h-3.5 w-3.5" />
                 Save
-              </Button>
-              <Button onClick={handleCheckout} className="font-display text-xs gap-1 bg-gradient-primary hover:opacity-90">
+              </Button> */}
+              <Button
+                onClick={handleCheckout}
+                className="font-display text-xs gap-1 bg-gradient-primary hover:opacity-90"
+              >
                 <CreditCard className="h-3.5 w-3.5" />
                 Pay
               </Button>
@@ -406,7 +621,9 @@ const RestaurantBilling = () => {
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display">Checkout — {table.name}</DialogTitle>
+            <DialogTitle className="font-display">
+              Checkout — {table.name}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <Card className="p-4 bg-gradient-cool text-white border-0">
@@ -426,7 +643,9 @@ const RestaurantBilling = () => {
                     type="button"
                     onClick={() => setPaymentMode(m)}
                     className={`py-2 rounded-md text-xs font-medium border-2 transition-colors ${
-                      paymentMode === m ? "border-primary bg-primary/5 text-primary" : "border-border"
+                      paymentMode === m
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border"
                     }`}
                   >
                     {m}
@@ -436,7 +655,9 @@ const RestaurantBilling = () => {
             </div>
 
             <div>
-              <Label className="text-xs">Amount Received (partial allowed)</Label>
+              <Label className="text-xs">
+                Amount Received (partial allowed)
+              </Label>
               <Input
                 type="number"
                 value={paid || ""}
@@ -447,18 +668,26 @@ const RestaurantBilling = () => {
 
             <div className="flex justify-between text-sm p-2.5 rounded-md bg-muted">
               <span className="text-muted-foreground">Balance Due</span>
-              <span className={`font-display font-bold ${balance > 0 ? "text-warning" : "text-success"}`}>
+              <span
+                className={`font-display font-bold ${balance > 0 ? "text-warning" : "text-success"}`}
+              >
                 ₹{balance.toFixed(2)}
               </span>
             </div>
 
             {!printed ? (
-              <Button onClick={handlePrint} className="w-full bg-gradient-primary hover:opacity-90 font-display gap-1.5">
+              <Button
+                onClick={handlePrint}
+                disabled={saving}
+                className="w-full bg-gradient-primary hover:opacity-90 font-display gap-1.5"
+              >
                 <Printer className="h-4 w-4" />
-                Print Bill
+                {saving ? "Saving..." : "Print Bill"}
               </Button>
             ) : (
-              <Button disabled className="w-full font-display">Printing...</Button>
+              <Button disabled className="w-full font-display">
+                Printing...
+              </Button>
             )}
           </div>
         </DialogContent>
