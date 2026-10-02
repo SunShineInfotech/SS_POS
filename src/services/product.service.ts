@@ -111,4 +111,9 @@ export class ProductService {
     const res = await apiClient.post('/product.php', { type: 4, product_id, company_id, franchise_id });
     return res.data;
   }
+
+    static async getProductsForPOS(company_id: string, franchise_id: string): Promise<ProductListResponse> {
+    const res = await apiClient.post('/product.php', { type: 6, company_id, franchise_id });
+    return res.data;
+  }
 }

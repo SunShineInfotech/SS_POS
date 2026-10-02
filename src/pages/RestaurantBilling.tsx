@@ -109,7 +109,7 @@ const RestaurantBilling = () => {
   const fetchProducts = async () => {
     try {
       const userProfile = getUserProfile();
-      const res = await ProductService.getProducts(
+      const res = await ProductService.getProductsForPOS(
         userProfile.company_id,
         userProfile.franchise_id,
       );
@@ -137,7 +137,6 @@ const RestaurantBilling = () => {
   };
 
   useEffect(() => {
-    console.log("Table ID from params:", tableId);
     saveStore(HOLD_KEY, holds);
     fetchProducts();
   }, [holds]);

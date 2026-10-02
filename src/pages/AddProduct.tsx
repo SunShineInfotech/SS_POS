@@ -1,6 +1,7 @@
 // src/pages/ProductForm.tsx
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,15 +14,54 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { Loader2, PackagePlus } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  PackagePlus,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
-import { ProductService, ProductPayload, ProductType } from "@/services/product.service";
-import { CategoryCombobox } from "@/components/shared/CategoryCombobox";
+import { cn } from "@/lib/utils";
+import {
+  ProductService,
+  ProductPayload,
+  ProductType,
+} from "@/services/product.service";
 
 const getCompanyData = () => {
   const raw = localStorage.getItem("company_data");
   return raw ? JSON.parse(raw) : null;
 };
+
+interface CategoryOption {
+  category_id: number;
+  category_name: string;
+}
+
+// VITE_API_URL ".../v1_api/" pe end hota hai
+const CATEGORY_API = `${import.meta.env.VITE_API_URL}category.php`;
 
 const ProductForm = () => {
   const { id } = useParams<{ id: string }>();
@@ -54,6 +94,19 @@ const ProductForm = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
 
+  // Category dropdown + "add new category" dialog
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [catLoading, setCatLoading] = useState(false);
+  const [catOpen, setCatOpen] = useState(false);
+  const [catSearch, setCatSearch] = useState("");
+  const [catDialogOpen, setCatDialogOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [catSaving, setCatSaving] = useState(false);
+
+  const selectedCategory = categories.find(
+    (c) => c.category_id === Number(formData.product_cat_id),
+  );
+
   // Validate ID on edit
   useEffect(() => {
     if (isEdit) {
@@ -80,7 +133,7 @@ const ProductForm = () => {
       const res = await ProductService.getProduct(
         Number(id),
         company.company_id,
-        company.franchise_id
+        company.franchise_id,
       );
 
       if (res.status === "success" && res.data) {
@@ -105,7 +158,7 @@ const ProductForm = () => {
         });
         if (p.product_image) {
           setImagePreview(
-            `${import.meta.env.VITE_API_URL?.replace("/v1_api/", "")}${p.product_image}`
+            `${import.meta.env.VITE_API_URL?.replace("/v1_api/", "")}/${p.product_image}`,
           );
         }
       } else {
@@ -134,6 +187,118 @@ const ProductForm = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isEdit]);
 
+  // ---------------------------------------------------------------------------
+  // Category helpers
+  // ---------------------------------------------------------------------------
+  const selectCategory = (catId: number) =>
+    setFormData((prev) => ({ ...prev, product_cat_id: catId }));
+
+  const loadCategories = async (): Promise<CategoryOption[]> => {
+    if (!company) return [];
+    setCatLoading(true);
+    try {
+      const res = await axios.post(CATEGORY_API, {
+        type: 2,
+        company_id: company.company_id,
+        franchise_id: company.franchise_id,
+      });
+      const list: CategoryOption[] =
+        res.data?.status === "success" && Array.isArray(res.data.data)
+          ? res.data.data.map((c: any) => ({
+              category_id: Number(c.category_id),
+              category_name: c.category_name,
+            }))
+          : [];
+      setCategories(list);
+      return list;
+    } catch (err) {
+      console.error("Error loading categories:", err);
+      toast.error("Could not load categories");
+      return [];
+    } finally {
+      setCatLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openCategoryDialog = () => {
+    setNewCatName(catSearch.trim()); // search me jo type kiya wo prefill
+    setCatOpen(false); // pehle popover band, phir dialog
+    setCatDialogOpen(true);
+  };
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newCatName.trim();
+    if (!name) return toast.error("Category name is required");
+    if (!company) return toast.error("Company data missing");
+
+    // Already exist karti hai to wahi select kar do
+    const existing = categories.find(
+      (c) => c.category_name.toLowerCase() === name.toLowerCase(),
+    );
+    if (existing) {
+      selectCategory(existing.category_id);
+      toast.info("Category already exists, selected it for you");
+      setCatDialogOpen(false);
+      setCatSearch("");
+      return;
+    }
+
+    setCatSaving(true);
+    try {
+      const res = await axios.post(CATEGORY_API, {
+        type: 1,
+        company_id: company.company_id,
+        franchise_id: company.franchise_id,
+        category_name: name,
+        category_status: 1,
+      });
+
+      if (res.data?.status === "success") {
+        const newId = Number(res.data.category_id);
+        setCategories((prev) => [
+          { category_id: newId, category_name: name },
+          ...prev,
+        ]);
+        selectCategory(newId); // default selected
+        toast.success(res.data.message || "Category added");
+        setCatDialogOpen(false);
+        setNewCatName("");
+        setCatSearch("");
+      } else {
+        toast.error(res.data?.message || "Failed to add category");
+      }
+    } catch (err: any) {
+      console.error("Error adding category:", err);
+      // 409 = server pe duplicate mila -> list refresh karke wahi select kar do
+      if (err?.response?.status === 409) {
+        const list = await loadCategories();
+        const dup = list.find(
+          (c) => c.category_name.toLowerCase() === name.toLowerCase(),
+        );
+        if (dup) {
+          selectCategory(dup.category_id);
+          setCatDialogOpen(false);
+          setCatSearch("");
+        }
+      }
+      toast.error(
+        err?.response?.data?.message ||
+          "Failed to add category. Please try again.",
+      );
+    } finally {
+      setCatSaving(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Form handlers
+  // ---------------------------------------------------------------------------
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
     setFormData((prev) => ({
@@ -215,7 +380,8 @@ const ProductForm = () => {
     } catch (err: any) {
       console.error("Error saving product:", err);
       toast.error(
-        err?.response?.data?.message || "Failed to save product. Please try again."
+        err?.response?.data?.message ||
+          "Failed to save product. Please try again.",
       );
     } finally {
       setSaving(false);
@@ -269,25 +435,8 @@ const ProductForm = () => {
           </>
         ) : (
           <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-5 pt-6">
-              {/* ------------------------------------------------------------------
-                  Common fields (visible for both Shop and Restaurant)
-              ------------------------------------------------------------------ */}
-              <div>
-                <Label className="text-xs font-semibold">Category *</Label>
-                <div className="mt-1.5">
-                  <CategoryCombobox
-                    companyId={company?.company_id || ""}
-                    franchiseId={company?.franchise_id || ""}
-                    value={Number(formData.product_cat_id) || 0}
-                    onChange={(catId) =>
-                      setFormData((prev) => ({ ...prev, product_cat_id: catId }))
-                    }
-                    disabled={saving}
-                  />
-                </div>
-              </div>
-
+            <CardContent className="grid grid-cols-1 gap-5 pt-6 md:grid-cols-2">
+              {/* Row 1 */}
               <div>
                 <Label htmlFor="product_name" className="text-xs font-semibold">
                   Product Name *
@@ -304,8 +453,102 @@ const ProductForm = () => {
                 />
               </div>
 
+              {/* Category (searchable + "Add new category") */}
               <div>
-                <Label htmlFor="product_image" className="text-xs font-semibold">
+                <Label className="text-xs font-semibold">Category *</Label>
+                <div className="mt-1.5">
+                  <Popover open={catOpen} onOpenChange={setCatOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={catOpen}
+                        disabled={saving}
+                        className="w-full justify-between font-normal"
+                      >
+                        <span
+                          className={cn(
+                            "truncate",
+                            !selectedCategory && "text-muted-foreground",
+                          )}
+                        >
+                          {selectedCategory
+                            ? selectedCategory.category_name
+                            : "Select a category"}
+                        </span>
+                        {catLoading ? (
+                          <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-50" />
+                        ) : (
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+
+                    <PopoverContent
+                      className="w-[var(--radix-popover-trigger-width)] p-0"
+                      align="start"
+                    >
+                      <Command>
+                        <CommandInput
+                          placeholder="Search category..."
+                          value={catSearch}
+                          onValueChange={setCatSearch}
+                        />
+                        <CommandList>
+                          <CommandEmpty>No category found.</CommandEmpty>
+                          <CommandGroup>
+                            {categories.map((c) => (
+                              <CommandItem
+                                key={c.category_id}
+                                value={`${c.category_name} ${c.category_id}`}
+                                onSelect={() => {
+                                  selectCategory(c.category_id);
+                                  setCatOpen(false);
+                                  setCatSearch("");
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    Number(formData.product_cat_id) ===
+                                      c.category_id
+                                      ? "opacity-100"
+                                      : "opacity-0",
+                                  )}
+                                />
+                                {c.category_name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+
+                      {/* Hamesha visible, search match ho ya na ho */}
+                      <div className="border-t border-border p-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={openCategoryDialog}
+                          className="w-full justify-start gap-2 text-sm font-medium text-primary hover:text-primary"
+                        >
+                          <Plus className="h-4 w-4" />
+                          {catSearch.trim()
+                            ? `Add "${catSearch.trim()}" as new category`
+                            : "Add new category"}
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {/* Row 2 */}
+              <div>
+                <Label
+                  htmlFor="product_image"
+                  className="text-xs font-semibold"
+                >
                   Image
                 </Label>
                 <Input
@@ -326,7 +569,10 @@ const ProductForm = () => {
               </div>
 
               <div>
-                <Label htmlFor="product_mrp_with_gst" className="text-xs font-semibold">
+                <Label
+                  htmlFor="product_mrp_with_gst"
+                  className="text-xs font-semibold"
+                >
                   MRP (with GST)
                 </Label>
                 <Input
@@ -341,9 +587,11 @@ const ProductForm = () => {
                 />
               </div>
 
-              {/* Status */}
-              <div>
-                <Label className="mb-2 block text-xs font-semibold">Status</Label>
+              {/* Status (full width) */}
+              <div className="md:col-span-2">
+                <Label className="mb-2 block text-xs font-semibold">
+                  Status
+                </Label>
                 <RadioGroup
                   value={String(formData.product_is_active)}
                   onValueChange={(val) =>
@@ -352,7 +600,7 @@ const ProductForm = () => {
                       product_is_active: Number(val) as 1 | 2,
                     }))
                   }
-                  className="grid grid-cols-2 gap-3"
+                  className="grid grid-cols-1 gap-3 sm:grid-cols-2"
                 >
                   <label
                     htmlFor="p-active"
@@ -373,15 +621,21 @@ const ProductForm = () => {
                         : "border-border text-muted-foreground"
                     }`}
                   >
-                    <RadioGroupItem value="2" id="p-inactive" disabled={saving} />
+                    <RadioGroupItem
+                      value="2"
+                      id="p-inactive"
+                      disabled={saving}
+                    />
                     Inactive
                   </label>
                 </RadioGroup>
               </div>
 
-              {/* Product Type */}
-              <div>
-                <Label className="mb-2 block text-xs font-semibold">Product Type</Label>
+              {/* Product Type (full width) */}
+              <div className="md:col-span-2">
+                <Label className="mb-2 block text-xs font-semibold">
+                  Product Type
+                </Label>
                 <RadioGroup
                   value={String(formData.product_type)}
                   onValueChange={(val) =>
@@ -390,7 +644,7 @@ const ProductForm = () => {
                       product_type: Number(val) as ProductType,
                     }))
                   }
-                  className="grid grid-cols-3 gap-3"
+                  className="grid grid-cols-1 gap-3 sm:grid-cols-3"
                 >
                   <label
                     htmlFor="p-sales"
@@ -411,7 +665,11 @@ const ProductForm = () => {
                         : "border-border text-muted-foreground"
                     }`}
                   >
-                    <RadioGroupItem value="2" id="p-purchase" disabled={saving} />
+                    <RadioGroupItem
+                      value="2"
+                      id="p-purchase"
+                      disabled={saving}
+                    />
                     Purchase
                   </label>
                   <label
@@ -428,13 +686,14 @@ const ProductForm = () => {
                 </RadioGroup>
               </div>
 
-              {/* ------------------------------------------------------------------
-                  Shop-only fields (franchise_type === 1)
-              ------------------------------------------------------------------ */}
+              {/* Shop-only fields (franchise_type === 1) — fragment, so children join the same grid */}
               {franchiseType === 1 && (
                 <>
                   <div>
-                    <Label htmlFor="product_variant_name" className="text-xs font-semibold">
+                    <Label
+                      htmlFor="product_variant_name"
+                      className="text-xs font-semibold"
+                    >
                       Variant Name
                     </Label>
                     <Input
@@ -448,7 +707,10 @@ const ProductForm = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="product_sku" className="text-xs font-semibold">
+                    <Label
+                      htmlFor="product_sku"
+                      className="text-xs font-semibold"
+                    >
                       SKU
                     </Label>
                     <Input
@@ -462,7 +724,10 @@ const ProductForm = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="product_hsn_code" className="text-xs font-semibold">
+                    <Label
+                      htmlFor="product_hsn_code"
+                      className="text-xs font-semibold"
+                    >
                       HSN Code
                     </Label>
                     <Input
@@ -476,7 +741,10 @@ const ProductForm = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="product_base_price" className="text-xs font-semibold">
+                    <Label
+                      htmlFor="product_base_price"
+                      className="text-xs font-semibold"
+                    >
                       Base Price
                     </Label>
                     <Input
@@ -490,9 +758,14 @@ const ProductForm = () => {
                       className="mt-1.5"
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+
+                  {/* CGST / SGST / IGST — full width row, 3 cols on sm+, stacked on mobile */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:col-span-2">
                     <div>
-                      <Label htmlFor="product_cgst" className="text-xs font-semibold">
+                      <Label
+                        htmlFor="product_cgst"
+                        className="text-xs font-semibold"
+                      >
                         CGST %
                       </Label>
                       <Input
@@ -507,7 +780,10 @@ const ProductForm = () => {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="product_sgst" className="text-xs font-semibold">
+                      <Label
+                        htmlFor="product_sgst"
+                        className="text-xs font-semibold"
+                      >
                         SGST %
                       </Label>
                       <Input
@@ -522,7 +798,10 @@ const ProductForm = () => {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="product_igst" className="text-xs font-semibold">
+                      <Label
+                        htmlFor="product_igst"
+                        className="text-xs font-semibold"
+                      >
                         IGST %
                       </Label>
                       <Input
@@ -537,8 +816,12 @@ const ProductForm = () => {
                       />
                     </div>
                   </div>
+
                   <div>
-                    <Label htmlFor="product_final_amount" className="text-xs font-semibold">
+                    <Label
+                      htmlFor="product_final_amount"
+                      className="text-xs font-semibold"
+                    >
                       Final Amount
                     </Label>
                     <Input
@@ -553,7 +836,10 @@ const ProductForm = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="product_stock" className="text-xs font-semibold">
+                    <Label
+                      htmlFor="product_stock"
+                      className="text-xs font-semibold"
+                    >
                       Opening Stock
                     </Label>
                     <Input
@@ -568,12 +854,17 @@ const ProductForm = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="product_weight" className="text-xs font-semibold">
+                    <Label
+                      htmlFor="product_weight"
+                      className="text-xs font-semibold"
+                    >
                       Weight
                     </Label>
                     <Input
                       id="product_weight"
                       name="product_weight"
+                      type="number"
+                      step="1.00"
                       value={formData.product_weight || ""}
                       onChange={handleChange}
                       placeholder="e.g. 500g"
@@ -584,9 +875,13 @@ const ProductForm = () => {
                 </>
               )}
             </CardContent>
-
             <CardFooter className="justify-end gap-2 border-t border-border pt-5">
-              <Button type="button" variant="outline" onClick={handleCancel} disabled={saving}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={saving}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={saving} className="min-w-[110px]">
@@ -605,6 +900,66 @@ const ProductForm = () => {
           </form>
         )}
       </Card>
+
+      {/* Add new category dialog (form ke bahar, taaki product form submit na ho) */}
+      <Dialog
+        open={catDialogOpen}
+        onOpenChange={(o) => !catSaving && setCatDialogOpen(o)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={handleAddCategory} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Add new category</DialogTitle>
+              <DialogDescription>
+                Save hote hi ye category is product ke liye select ho jayegi.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div>
+              <Label
+                htmlFor="new_category_name"
+                className="text-xs font-semibold"
+              >
+                Category Name *
+              </Label>
+              <Input
+                id="new_category_name"
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                placeholder="e.g. Beverages"
+                disabled={catSaving}
+                autoFocus
+                className="mt-1.5"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCatDialogOpen(false)}
+                disabled={catSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={catSaving}
+                className="min-w-[110px]"
+              >
+                {catSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Add category"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

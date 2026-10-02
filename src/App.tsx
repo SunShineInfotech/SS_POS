@@ -41,11 +41,14 @@ import ExpenseCategories from "./pages/ExpenseCategories";
 import AddExpenseCategory from "./pages/AddExpenseCategory";
 import Accounts from "./pages/Accounts";
 import AddAccount from "./pages/AddAccount";
+import PurchaseInsights from "./pages/Purchaseinsights";
+import PurchasePayment from "./pages/PurchasePayment";
 
 const queryClient = new QueryClient();
 
 const App = () => {
-  const basename = import.meta.env.VITE_BASE_PATH || "/interior_designer/build_v1/";
+  const basename =
+    import.meta.env.VITE_BASE_PATH || "/interior_designer/build_v1/";
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
@@ -111,6 +114,14 @@ const App = () => {
                   <Route path="/purchases" element={<Purchases />} />
                   <Route path="/purchases/new" element={<AddPurchase />} />
                   <Route path="/purchases/:id/edit" element={<AddPurchase />} />
+                  <Route
+                    path="/purchases/insights"
+                    element={<PurchaseInsights />}
+                  />
+                  <Route
+                    path="/purchase-payments"
+                    element={<PurchasePayment />}
+                  />
                   <Route path="/income" element={<Income />} />
                   <Route path="/income/new" element={<AddIncome />} />
                   <Route path="/income/:id/edit" element={<AddIncome />} />
@@ -119,13 +130,25 @@ const App = () => {
                   <Route path="/expenses/:id/edit" element={<AddExpense />} />
                   <Route path="/attendance" element={<Attendance />} />
                   <Route path="/attendance/new" element={<AddAttendance />} />
-                  <Route path="/attendance/:id/edit" element={<AddAttendance />} />
+                  <Route
+                    path="/attendance/:id/edit"
+                    element={<AddAttendance />}
+                  />
                   <Route path="/more" element={<MoreMenu />} />
                   <Route path="/privacy" element={<Privacy />} />
                   <Route path="/terms" element={<Terms />} />
-                  <Route path="/expance-category" element={<ExpenseCategories />} />
-                  <Route path="/expance-category/new" element={<AddExpenseCategory />} />
-                  <Route path="/expance-category/:id/edit" element={<AddExpenseCategory />} />
+                  <Route
+                    path="/expance-category"
+                    element={<ExpenseCategories />}
+                  />
+                  <Route
+                    path="/expance-category/new"
+                    element={<AddExpenseCategory />}
+                  />
+                  <Route
+                    path="/expance-category/:id/edit"
+                    element={<AddExpenseCategory />}
+                  />
                   <Route path="/account" element={<Accounts />} />
                   <Route path="/account/new" element={<AddAccount />} />
                   <Route path="/account/:id/edit" element={<AddAccount />} />
