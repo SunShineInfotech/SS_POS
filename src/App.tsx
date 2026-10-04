@@ -47,8 +47,7 @@ import PurchasePayment from "./pages/PurchasePayment";
 const queryClient = new QueryClient();
 
 const App = () => {
-  const basename =
-    import.meta.env.VITE_BASE_PATH || "/interior_designer/build_v1/";
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>

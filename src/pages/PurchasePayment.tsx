@@ -24,6 +24,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
@@ -37,6 +38,7 @@ import {
   Inbox,
   Landmark,
   Loader2,
+  Pencil,
   RefreshCw,
   Search,
   Smartphone,
@@ -66,8 +68,13 @@ const PAY_API = `${API_URL}purchase_payment.php`;
 /** Save loader stays on screen at least this long */
 const MIN_SAVE_LOADER_MS = 2000;
 
-const getUserProfile = () =>
-  JSON.parse(localStorage.getItem("company_data") || "{}");
+const getUserProfile = () => {
+  try {
+    return JSON.parse(localStorage.getItem("company_data") || "{}");
+  } catch {
+    return {};
+  }
+};
 
 const getFinancialYear = () => {
   try {
@@ -102,12 +109,15 @@ interface LedgerEntry {
   date: string;
   kind: "credit" | "debit"; // 1 = credit (purchase), 2 = debit (payment)
   amount: number;
+  balance: number; // tbl_transaction.transaction_balance (outstanding after this entry)
   remark: string;
   account: string;
+  accountId: string;
+  purchaseId: string; // "" when not against a bill
   transferType: number;
   txnNumber: string;
   billNo: string;
-  isPayment: boolean; // only payments can be deleted from here
+  isPayment: boolean; // only payments can be edited / deleted from here
 }
 
 interface Bill {
@@ -130,6 +140,24 @@ type TransferType = "1" | "2" | "3";
 type MobileTab = "pay" | "history" | "bills";
 type ListTab = "history" | "bills";
 type Errors = Record<string, string>;
+
+interface EditForm {
+  accountId: string;
+  transferType: TransferType | "";
+  amount: string;
+  txnNumber: string;
+  date: string;
+  remark: string;
+}
+
+const EMPTY_EDIT: EditForm = {
+  accountId: "",
+  transferType: "",
+  amount: "",
+  txnNumber: "",
+  date: "",
+  remark: "",
+};
 
 const TRANSFER_TYPES: {
   value: TransferType;
@@ -154,6 +182,9 @@ const TRANSFER_TYPES: {
 
 const transferLabel = (t: number) =>
   TRANSFER_TYPES.find((x) => Number(x.value) === t)?.label ?? "";
+
+const toTransferType = (t: number): TransferType | "" =>
+  t === 1 || t === 2 || t === 3 ? (String(t) as TransferType) : "";
 
 /** Cash account → Cash, every other account → Bank */
 const isCashAccount = (a: AccountOption) =>
@@ -211,12 +242,11 @@ const prettyDate = (d: string) => {
   return y && m && dd ? `${dd}-${m}-${y}` : s;
 };
 
+const ymd = (d: string) => String(d || "").slice(0, 10);
+
 /** "2026-08-12" → Date (local), or null */
 const parseYmd = (s: string) => {
-  const [y, m, d] = String(s || "")
-    .slice(0, 10)
-    .split("-")
-    .map(Number);
+  const [y, m, d] = ymd(s).split("-").map(Number);
   if (!y || !m || !d) return null;
   const date = new Date(y, m - 1, d);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -243,8 +273,17 @@ const toLedger = (t: any): LedgerEntry => ({
   date: t.transaction_date,
   kind: String(t.transaction_type) === "2" ? "debit" : "credit",
   amount: Number(t.transaction_amount) || 0,
+  balance: Number(t.transaction_balance) || 0,
   remark: t.transaction_remark || "",
   account: t.account_name || "",
+  accountId:
+    Number(t.transaction_account_id) > 0
+      ? String(t.transaction_account_id)
+      : "",
+  purchaseId:
+    Number(t.transaction_purches_id) > 0
+      ? String(t.transaction_purches_id)
+      : "",
   transferType: Number(t.transaction_transfer_type) || 0,
   txnNumber: t.transaction_number || "",
   billNo: t.purchess_bill_number || "",
@@ -318,6 +357,13 @@ const PurchasePayment = () => {
   const [billSheetOpen, setBillSheetOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // ----- Edit payment -----
+  const [editTarget, setEditTarget] = useState<LedgerEntry | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT);
+  const [editErrors, setEditErrors] = useState<Errors>({});
+  const [editSaving, setEditSaving] = useState(false);
 
   const reqRef = useRef(0);
   const formRef = useRef<HTMLDivElement>(null);
@@ -473,6 +519,21 @@ const PurchasePayment = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, [deleteTarget, deleting]);
 
+  // Close the desktop edit dialog with Escape (mobile sheet handles its own)
+  useEffect(() => {
+    if (!editOpen || isMobile) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !editSaving) setEditOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [editOpen, editSaving, isMobile]);
+
   // ---------- Error helpers ----------
 
   const clearErrors = (keys: string[]) =>
@@ -599,6 +660,39 @@ const PurchasePayment = () => {
 
   const pendingTotal = openBills.reduce((s, b) => s + b.pending, 0);
 
+  // ----- Edit derived -----
+
+  const editAmt = round2(num(editForm.amount));
+  const editAccount = accounts.find((a) => a.id === editForm.accountId);
+  const editBill = editTarget?.purchaseId
+    ? bills.find((b) => b.id === editTarget.purchaseId)
+    : undefined;
+  /** Bill's pending + what this payment already covers */
+  const editMax =
+    editTarget && editBill
+      ? round2(editBill.pending + editTarget.amount)
+      : null;
+  const editDelta = editTarget ? round2(editAmt - editTarget.amount) : 0;
+  const editOutstandingAfter = selectedVendor
+    ? round2(selectedVendor.outstanding - editDelta)
+    : 0;
+  const editSameAccount =
+    !!editTarget && editForm.accountId === editTarget.accountId;
+  const editAccountAfter = editAccount
+    ? round2(editAccount.balance - (editSameAccount ? editDelta : editAmt))
+    : 0;
+  const editOverBill = editMax !== null && editAmt > editMax + 0.001;
+  const editOverAccount =
+    !!editAccount && editAmt > 0 && editAccountAfter < -0.001;
+  const editChanged =
+    !!editTarget &&
+    (editAmt !== round2(editTarget.amount) ||
+      !editSameAccount ||
+      editForm.transferType !== toTransferType(editTarget.transferType) ||
+      editForm.txnNumber.trim() !== editTarget.txnNumber ||
+      editForm.date !== ymd(editTarget.date) ||
+      editForm.remark.trim() !== editTarget.remark);
+
   // ---------- Actions ----------
 
   const changeVendor = (v: string) => {
@@ -668,6 +762,29 @@ const PurchasePayment = () => {
     return e;
   };
 
+  /** Updates vendor + account balances in the dropdowns from a server response */
+  const applyBalances = (data: any) => {
+    const vBal = Number(data?.vendor_outstanding);
+    if (Number.isFinite(vBal)) {
+      setVendors((vs) =>
+        vs.map((v) => (v.id === vendorId ? { ...v, outstanding: vBal } : v)),
+      );
+    }
+    const updates: Record<string, number> = {};
+    const aId = String(data?.account_id ?? "");
+    const aBal = Number(data?.account_balance);
+    if (aId && Number.isFinite(aBal)) updates[aId] = aBal;
+    const oId = String(data?.old_account_id ?? "");
+    const oBal = Number(data?.old_account_balance);
+    if (oId && oId !== "null" && Number.isFinite(oBal)) updates[oId] = oBal;
+    if (Object.keys(updates).length) {
+      setAccounts((as) =>
+        as.map((a) => (a.id in updates ? { ...a, balance: updates[a.id] } : a)),
+      );
+    }
+    return Number.isFinite(vBal) ? vBal : null;
+  };
+
   const save = async () => {
     if (saving) return;
 
@@ -726,26 +843,15 @@ const PurchasePayment = () => {
         return;
       }
 
-      const vBal = Number(res.data.vendor_outstanding);
-      const aBal = Number(res.data.account_balance);
+      const vBal = applyBalances(res.data);
       const billCount = (res.data.allocations || []).filter(
         (a: any) => a.purchase_id,
       ).length;
 
-      if (Number.isFinite(vBal)) {
-        setVendors((vs) =>
-          vs.map((v) => (v.id === vendorId ? { ...v, outstanding: vBal } : v)),
-        );
-      }
-      if (Number.isFinite(aBal)) {
-        setAccounts((as) =>
-          as.map((a) => (a.id === accountId ? { ...a, balance: aBal } : a)),
-        );
-      }
       toast.success("Payment saved", {
         description: [
           billCount > 1 ? `Split across ${billCount} bills.` : "",
-          Number.isFinite(vBal)
+          vBal !== null
             ? `${selectedVendor?.name ?? "Vendor"} outstanding is now ${dueText(vBal)}`
             : "",
         ]
@@ -770,24 +876,11 @@ const PurchasePayment = () => {
         type: 4,
         company_id: u.company_id,
         franchise_id: u.franchise_id,
+        employee_id: u.employee_id ?? u.user_id ?? 0,
         transaction_id: deleteTarget.id,
       });
       if (res.data.status === "success") {
-        const vBal = Number(res.data.vendor_outstanding);
-        const aBal = Number(res.data.account_balance);
-        const aId = String(res.data.account_id ?? "");
-        if (Number.isFinite(vBal)) {
-          setVendors((vs) =>
-            vs.map((v) =>
-              v.id === vendorId ? { ...v, outstanding: vBal } : v,
-            ),
-          );
-        }
-        if (aId && Number.isFinite(aBal)) {
-          setAccounts((as) =>
-            as.map((a) => (a.id === aId ? { ...a, balance: aBal } : a)),
-          );
-        }
+        applyBalances(res.data);
         toast.success("Payment deleted", {
           description: `${inr(deleteTarget.amount)} added back to the outstanding`,
         });
@@ -801,6 +894,127 @@ const PurchasePayment = () => {
       toast.error(apiError(err, "Couldn't delete the payment. Try again."));
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // ----- Edit -----
+
+  const openEdit = (t: LedgerEntry) => {
+    setEditTarget(t);
+    setEditForm({
+      accountId: t.accountId,
+      transferType: toTransferType(t.transferType),
+      amount: amountText(t.amount),
+      txnNumber: t.txnNumber,
+      date: ymd(t.date),
+      remark: t.remark,
+    });
+    setEditErrors({});
+    setEditOpen(true);
+  };
+
+  const closeEdit = () => {
+    if (!editSaving) setEditOpen(false);
+  };
+
+  const patchEdit = (patch: Partial<EditForm>, clear: string[] = []) => {
+    setEditForm((f) => ({ ...f, ...patch }));
+    if (clear.length)
+      setEditErrors((prev) => {
+        if (!clear.some((k) => prev[k])) return prev;
+        const next = { ...prev };
+        clear.forEach((k) => delete next[k]);
+        return next;
+      });
+  };
+
+  const changeEditAccount = (v: string) => {
+    const a = accounts.find((x) => x.id === v);
+    patchEdit(
+      {
+        accountId: v,
+        ...(a ? { transferType: isCashAccount(a) ? "2" : "1" } : {}),
+      } as Partial<EditForm>,
+      ["account", "transferType"],
+    );
+  };
+
+  const validateEdit = (): Errors => {
+    const e: Errors = {};
+    if (!editForm.accountId) e.account = "Select the account you paid from";
+    if (!editForm.transferType) e.transferType = "Select Bank, Cash or UPI";
+    if (editAmt <= 0) e.amount = "Enter the amount";
+    else if (editOverBill && editMax !== null)
+      e.amount = `Bill ${editTarget?.billNo} allows at most ${inr(editMax)} for this payment`;
+    if (!editForm.date) e.date = "Select the transaction date";
+    return e;
+  };
+
+  const saveEdit = async () => {
+    if (!editTarget || editSaving) return;
+
+    const e = validateEdit();
+    setEditErrors(e);
+    if (Object.keys(e).length) {
+      toast.error(Object.values(e)[0]);
+      return;
+    }
+    if (!editChanged) {
+      toast.info("Nothing changed");
+      setEditOpen(false);
+      return;
+    }
+
+    setEditSaving(true);
+    const started = Date.now();
+    try {
+      const u = getUserProfile();
+      let res: any = null;
+      let failure: unknown = null;
+      try {
+        res = await axios.post(PAY_API, {
+          type: 6,
+          company_id: u.company_id,
+          franchise_id: u.franchise_id,
+          employee_id: u.employee_id ?? u.user_id ?? 0,
+          transaction_id: editTarget.id,
+          account_id: Number(editForm.accountId),
+          transfer_type: Number(editForm.transferType),
+          amount: editAmt,
+          transaction_number: editForm.txnNumber.trim(),
+          transaction_date: editForm.date,
+          remark: editForm.remark.trim(),
+        });
+      } catch (err) {
+        failure = err;
+      }
+
+      const left = MIN_SAVE_LOADER_MS - (Date.now() - started);
+      if (left > 0) await wait(left);
+
+      if (failure) {
+        console.error("Error updating payment:", failure);
+        toast.error(
+          apiError(failure, "Couldn't update the payment. Try again."),
+        );
+        return;
+      }
+      if (res?.data?.status !== "success") {
+        toast.error(res?.data?.message || "Couldn't update the payment");
+        return;
+      }
+
+      const vBal = applyBalances(res.data);
+      toast.success("Payment updated", {
+        description:
+          vBal !== null
+            ? `${selectedVendor?.name ?? "Vendor"} outstanding is now ${dueText(vBal)}`
+            : undefined,
+      });
+      setEditOpen(false);
+      loadVendorData(vendorId);
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -1086,75 +1300,31 @@ const PurchasePayment = () => {
       </Field>
 
       {/* Transfer type (auto-set from the account, can be changed) */}
-      <div>
-        <Label className="text-xs">
-          Transfer type <span className="text-destructive">*</span>
-        </Label>
-        <div
-          role="radiogroup"
-          aria-label="Transfer type"
-          aria-invalid={!!errors.transferType}
-          className="mt-1 grid grid-cols-3 gap-2"
-        >
-          {TRANSFER_TYPES.map((t) => {
-            const Icon = t.icon;
-            const active = transferType === t.value;
-            return (
-              <button
-                key={t.value}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => {
-                  setTransferType(t.value);
-                  clearErrors(["transferType"]);
-                }}
-                className={cn(
-                  "flex touch-manipulation flex-col items-center justify-center gap-1 rounded-xl border text-xs font-semibold transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  isMobile ? "h-16 text-sm" : "h-14",
-                  active
-                    ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                    : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                  errors.transferType && !active && "border-destructive/60",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-        {errors.transferType && (
-          <p className="mt-1 text-xs text-destructive">{errors.transferType}</p>
-        )}
-      </div>
+      <TransferTypePicker
+        value={transferType}
+        onChange={(v) => {
+          setTransferType(v);
+          clearErrors(["transferType"]);
+        }}
+        error={errors.transferType}
+        large={isMobile}
+      />
 
       {/* Against bills (optional, multiple) */}
       {billField}
 
       {/* Amount */}
       <Field label="Amount" htmlFor="pay-amount" required error={errors.amount}>
-        <div className="relative">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-display text-muted-foreground">
-            ₹
-          </span>
-          <Input
-            id="pay-amount"
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => {
-              setAmount(decimal(e.target.value));
-              clearErrors(["amount"]);
-            }}
-            placeholder="0.00"
-            aria-invalid={!!errors.amount}
-            className={cn(
-              "pl-7 font-display font-semibold tabular-nums",
-              isMobile ? "h-12 text-lg" : "h-10 text-base",
-              errors.amount && "border-destructive",
-            )}
-          />
-        </div>
+        <AmountInput
+          id="pay-amount"
+          value={amount}
+          onChange={(v) => {
+            setAmount(v);
+            clearErrors(["amount"]);
+          }}
+          invalid={!!errors.amount}
+          large={isMobile}
+        />
 
         {(billIds.length > 0 ||
           (selectedVendor && selectedVendor.outstanding > 0)) && (
@@ -1289,6 +1459,7 @@ const PurchasePayment = () => {
         <Textarea
           id="pay-remark"
           value={remark}
+          maxLength={500}
           onChange={(e) => setRemark(e.target.value)}
           rows={isMobile ? 3 : 2}
           placeholder={
@@ -1301,6 +1472,407 @@ const PurchasePayment = () => {
       </Field>
     </div>
   );
+
+  // ---------- Edit form ----------
+
+  const editTransfer = TRANSFER_TYPES.find(
+    (t) => t.value === editForm.transferType,
+  );
+
+  const editSummary = editTarget ? (
+    <div className="flex items-center gap-3 rounded-xl bg-muted/50 px-3 py-2.5 text-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+        <ArrowUpRight className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-semibold text-foreground">
+          {editTarget.billNo
+            ? `Against bill ${editTarget.billNo}`
+            : "On account payment"}
+        </p>
+        <p className="text-muted-foreground">
+          Saved as {inr(editTarget.amount)} on {prettyDate(editTarget.date)}
+        </p>
+      </div>
+    </div>
+  ) : null;
+
+  const editAccountField = editTarget ? (
+    <Field
+      label="Paid from account"
+      htmlFor="edit-account"
+      required
+      error={editErrors.account}
+    >
+      {isMobile ? (
+        <SheetSelect
+          id="edit-account"
+          title="Paid from account"
+          value={editForm.accountId}
+          onChange={changeEditAccount}
+          options={accountOptions}
+          placeholder="Select account"
+          searchPlaceholder="Search account"
+          emptyText="No account found"
+          invalid={!!editErrors.account}
+          loading={loadingAccounts}
+        />
+      ) : (
+        <SearchableSelect
+          id="edit-account"
+          value={editForm.accountId}
+          onChange={changeEditAccount}
+          options={accountOptions}
+          placeholder={loadingAccounts ? "Loading accounts…" : "Select account"}
+          searchPlaceholder="Search account"
+          emptyText="No account found"
+          invalid={!!editErrors.account}
+          loading={loadingAccounts}
+        />
+      )}
+      {/* Desktop shows the account effect in the side panel */}
+      {isMobile && editAccount && !editErrors.account && (
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Balance {inr(editAccount.balance)}, after change{" "}
+          <span
+            className={cn(
+              "font-semibold",
+              editOverAccount
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-foreground",
+            )}
+          >
+            {inr(editAccountAfter)}
+          </span>
+          {!editSameAccount && editTarget.account && (
+            <span className="block">
+              {inr(editTarget.amount)} goes back to {editTarget.account}.
+            </span>
+          )}
+        </p>
+      )}
+    </Field>
+  ) : null;
+
+  const editTransferField = (
+    <TransferTypePicker
+      value={editForm.transferType}
+      onChange={(v) => patchEdit({ transferType: v }, ["transferType"])}
+      error={editErrors.transferType}
+      large={isMobile}
+    />
+  );
+
+  const editAmountField = editTarget ? (
+    <Field
+      label="Amount"
+      htmlFor="edit-amount"
+      required
+      error={editErrors.amount}
+    >
+      <AmountInput
+        id="edit-amount"
+        value={editForm.amount}
+        onChange={(v) => patchEdit({ amount: v }, ["amount"])}
+        invalid={!!editErrors.amount}
+        large={isMobile}
+      />
+      {(editAmt !== round2(editTarget.amount) || editMax !== null) && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {editAmt !== round2(editTarget.amount) && (
+            <QuickChip
+              onClick={() =>
+                patchEdit({ amount: amountText(editTarget.amount) }, ["amount"])
+              }
+            >
+              Original {inr(editTarget.amount)}
+            </QuickChip>
+          )}
+          {editMax !== null && (
+            <QuickChip
+              onClick={() =>
+                patchEdit({ amount: amountText(editMax) }, ["amount"])
+              }
+            >
+              Bill max {inr(editMax)}
+            </QuickChip>
+          )}
+        </div>
+      )}
+      {editOverBill && editMax !== null && !editErrors.amount && (
+        <div className="mt-2">
+          <Notice>
+            Bill {editTarget.billNo} allows at most {inr(editMax)} for this
+            payment.
+          </Notice>
+        </div>
+      )}
+    </Field>
+  ) : null;
+
+  const editRefDateFields = (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Field label="Transaction no." htmlFor="edit-number" optional>
+        <Input
+          id="edit-number"
+          value={editForm.txnNumber}
+          maxLength={100}
+          onChange={(e) => patchEdit({ txnNumber: e.target.value })}
+          placeholder={editTransfer?.refHint ?? "Reference no."}
+          className={touch}
+        />
+      </Field>
+      <Field
+        label="Transaction date"
+        htmlFor="edit-date"
+        required
+        error={editErrors.date}
+      >
+        {isMobile ? (
+          <SheetDatePicker
+            id="edit-date"
+            value={editForm.date}
+            onChange={(v) => patchEdit({ date: v }, ["date"])}
+            invalid={!!editErrors.date}
+          />
+        ) : (
+          <DatePicker
+            id="edit-date"
+            value={editForm.date}
+            onChange={(v) => patchEdit({ date: v }, ["date"])}
+            disableFuture
+            invalid={!!editErrors.date}
+          />
+        )}
+      </Field>
+    </div>
+  );
+
+  const editRemarkField = (
+    <Field label="Remark" htmlFor="edit-remark" optional>
+      <Textarea
+        id="edit-remark"
+        value={editForm.remark}
+        maxLength={500}
+        onChange={(e) => patchEdit({ remark: e.target.value })}
+        rows={2}
+        placeholder="Leave empty to use the automatic remark"
+        className={cn("resize-none", isMobile && "text-base")}
+      />
+    </Field>
+  );
+
+  /** Mobile: everything stacked inside the bottom sheet (unchanged look) */
+  const editFields = editTarget ? (
+    <div className="space-y-4">
+      {editSummary}
+      {editAccountField}
+      {editTransferField}
+      {editAmountField}
+
+      {selectedVendor && (
+        <div className="grid grid-cols-2 divide-x divide-border overflow-hidden rounded-xl border border-border">
+          <div className="px-3 py-2.5">
+            <p className="text-[11px] text-muted-foreground">Outstanding now</p>
+            <p className="font-display text-base font-bold tabular-nums">
+              {dueText(selectedVendor.outstanding)}
+            </p>
+          </div>
+          <div
+            className={cn(
+              "px-3 py-2.5 transition-colors",
+              editDelta !== 0 && "bg-primary/[0.06]",
+            )}
+          >
+            <p className="text-[11px] text-muted-foreground">
+              After this change
+            </p>
+            <p
+              className={cn(
+                "font-display text-base font-bold tabular-nums",
+                editDelta === 0 && "text-muted-foreground/70",
+              )}
+            >
+              {editDelta === 0 ? "No change" : dueText(editOutstandingAfter)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {editRefDateFields}
+      {editRemarkField}
+    </div>
+  ) : null;
+
+  const editActions = (
+    <div className="grid grid-cols-2 gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={closeEdit}
+        disabled={editSaving}
+        className={cn("rounded-xl", isMobile ? "h-12 text-base" : "h-10")}
+      >
+        Cancel
+      </Button>
+      <Button
+        type="button"
+        onClick={saveEdit}
+        disabled={editSaving || !editChanged}
+        className={cn("rounded-xl", isMobile ? "h-12 text-base" : "h-10")}
+      >
+        {editSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {editSaving ? "Saving…" : "Save changes"}
+      </Button>
+    </div>
+  );
+
+  /**
+   * Desktop edit dialog: wide, two columns, no scrolling.
+   * Left = what changes (outstanding + account), right = the form.
+   * Rendered in a portal so it also covers the app header.
+   */
+  const editDialog =
+    !isMobile && editOpen && editTarget
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-[2px] animate-in fade-in-0 duration-200 sm:items-center"
+            onClick={closeEdit}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-title"
+              onClick={(e) => e.stopPropagation()}
+              className="grid w-full max-w-[920px] rounded-2xl bg-card shadow-2xl animate-in fade-in-0 zoom-in-[0.97] duration-200 md:grid-cols-[300px_minmax(0,1fr)]"
+            >
+              {/* Left: impact of the change */}
+              <aside className="flex flex-col gap-4 rounded-t-2xl border-b border-border bg-primary/[0.05] p-5 md:rounded-l-2xl md:rounded-tr-none md:border-b-0 md:border-r">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Payment #{editTarget.id}
+                  </p>
+                  <h2
+                    id="edit-title"
+                    className="mt-0.5 font-display text-lg font-bold leading-tight"
+                  >
+                    Edit payment
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {editTarget.billNo
+                      ? `Against bill ${editTarget.billNo}`
+                      : "On account payment"}
+                    , saved as {inr(editTarget.amount)} on{" "}
+                    {prettyDate(editTarget.date)}
+                  </p>
+                </div>
+
+                {selectedVendor && (
+                  <div className="rounded-xl border border-primary/15 bg-card">
+                    <div className="px-4 py-3">
+                      <p className="text-[11px] text-muted-foreground">
+                        {selectedVendor.name}, outstanding now
+                      </p>
+                      <p className="font-display text-lg font-bold tabular-nums">
+                        {dueText(selectedVendor.outstanding)}
+                      </p>
+                    </div>
+                    <div className="relative border-t border-dashed border-primary/20">
+                      <span className="absolute -top-3 left-4 flex h-6 w-6 items-center justify-center rounded-full border border-primary/20 bg-card text-primary">
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                    <div
+                      className={cn(
+                        "rounded-b-xl px-4 pb-3 pt-4 transition-colors duration-300",
+                        editDelta !== 0 && "bg-primary/[0.06]",
+                      )}
+                    >
+                      <p className="text-[11px] text-muted-foreground">
+                        After this change
+                      </p>
+                      <p
+                        className={cn(
+                          "font-display text-2xl font-bold tabular-nums transition-colors",
+                          editDelta === 0
+                            ? "text-muted-foreground/60"
+                            : "text-primary",
+                        )}
+                      >
+                        {editDelta === 0
+                          ? "No change"
+                          : dueText(editOutstandingAfter)}
+                      </p>
+                      {editDelta !== 0 && (
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">
+                          Paying {inr(Math.abs(editDelta))}{" "}
+                          {editDelta > 0 ? "more" : "less"} than before
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {editAccount && (
+                  <div className="rounded-xl border border-border bg-card px-4 py-3 text-xs">
+                    <p className="text-muted-foreground">{editAccount.name}</p>
+                    <p className="mt-0.5 flex items-baseline gap-1.5 font-display tabular-nums">
+                      <span className="text-sm text-muted-foreground">
+                        {inr(editAccount.balance)}
+                      </span>
+                      <span className="text-muted-foreground">to</span>
+                      <span
+                        className={cn(
+                          "text-base font-bold",
+                          editOverAccount
+                            ? "text-amber-700 dark:text-amber-400"
+                            : "text-foreground",
+                        )}
+                      >
+                        {inr(editAccountAfter)}
+                      </span>
+                    </p>
+                    {!editSameAccount && editTarget.account && (
+                      <p className="mt-1 text-muted-foreground">
+                        {inr(editTarget.amount)} goes back to{" "}
+                        {editTarget.account}.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </aside>
+
+              {/* Right: the form */}
+              <div className="flex min-w-0 flex-col">
+                <div className="flex items-center justify-end px-5 pt-3">
+                  <button
+                    type="button"
+                    onClick={closeEdit}
+                    disabled={editSaving}
+                    aria-label="Close"
+                    className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="space-y-4 px-5 pb-5">
+                  {editAccountField}
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {editTransferField}
+                    {editAmountField}
+                  </div>
+                  {editRefDateFields}
+                  {editRemarkField}
+                </div>
+                <div className="mt-auto flex items-center justify-end gap-2 rounded-br-2xl border-t border-border bg-muted/30 px-5 py-3">
+                  <div className="w-full max-w-xs">{editActions}</div>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   // ---------- List sections ----------
 
@@ -1386,91 +1958,176 @@ const PurchasePayment = () => {
     </div>
   ) : null;
 
+  /** Light vertical line between every column (none after the last one) */
+  const colLines =
+    "[&_td]:border-r [&_th]:border-r [&_td]:border-border/50 [&_th]:border-border/50 [&_tr>*:last-child]:border-r-0";
+
   const historyTable = (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className={cn("w-full border-collapse text-sm", colLines)}>
         <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
           <tr>
-            <th className="px-3 py-2.5 font-semibold">Id</th>
-            <th className="px-3 py-2.5 font-semibold">Date</th>
-            <th className="px-3 py-2.5 font-semibold">Account</th>
-            <th className="px-3 py-2.5 font-semibold">Remark</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Debit</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Credit</th>
-            <th className="w-10" />
+            <th className="w-[130px] px-4 py-2.5 font-semibold">Date</th>
+            <th className="px-4 py-2.5 font-semibold">Particulars</th>
+            <th className="w-[120px] px-4 py-2.5 text-right font-semibold">
+              Debit
+            </th>
+            <th className="w-[120px] px-4 py-2.5 text-right font-semibold">
+              Credit
+            </th>
+            <th
+              className="w-[130px] px-4 py-2.5 text-right font-semibold"
+              title="Vendor outstanding right after this entry"
+            >
+              Balance
+            </th>
+            <th className="w-[76px] px-2 py-2.5">
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {historyRows.map((t) => (
-            <tr
-              key={t.id}
-              className="group border-t border-border hover:bg-muted/30"
-            >
-              <td className="px-3 py-2.5 font-display text-xs text-muted-foreground">
-                {t.id}
-              </td>
-              <td className="whitespace-nowrap px-3 py-2.5">
-                {prettyDate(t.date)}
-              </td>
-              <td className="px-3 py-2.5">
-                {t.account ? (
-                  <>
-                    <div className="font-medium">{t.account}</div>
-                    {(t.transferType > 0 || t.txnNumber) && (
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                        {t.transferType > 0 && (
-                          <Tag>{transferLabel(t.transferType)}</Tag>
-                        )}
-                        {t.txnNumber && <span>Ref {t.txnNumber}</span>}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">-</span>
-                )}
-              </td>
-              <td className="max-w-[280px] px-3 py-2.5">
-                <div className="line-clamp-2">{t.remark || "-"}</div>
-                {t.billNo && t.kind === "debit" && (
-                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                    Against bill {t.billNo}
+          {historyRows.map((t) => {
+            const debit = t.kind === "debit";
+            const d = parseYmd(t.date);
+            return (
+              <tr
+                key={t.id}
+                className="group border-t border-border transition-colors hover:bg-muted/30"
+              >
+                {/* Date + id */}
+                <td className="whitespace-nowrap px-4 py-3 align-top">
+                  <p className="font-medium">
+                    {d ? format(d, "dd MMM yyyy") : prettyDate(t.date)}
+                  </p>
+                  <p className="mt-0.5 font-display text-[11px] text-muted-foreground">
+                    #{t.id}
+                  </p>
+                </td>
+
+                {/* What happened */}
+                <td className="px-4 py-3 align-top">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={cn(
+                        "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                        debit
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                          : "bg-muted text-foreground/70",
+                      )}
+                      title={debit ? "Payment" : "Purchase"}
+                    >
+                      {debit ? (
+                        <ArrowUpRight className="h-4 w-4" />
+                      ) : (
+                        <ArrowDownLeft className="h-4 w-4" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 leading-snug">
+                        {t.remark || (debit ? "Payment" : "Purchase")}
+                      </p>
+                      {(t.account ||
+                        t.transferType > 0 ||
+                        t.txnNumber ||
+                        (debit && t.billNo)) && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                          {debit && t.billNo && <Tag>Bill {t.billNo}</Tag>}
+                          {t.account && <Tag>{t.account}</Tag>}
+                          {t.transferType > 0 &&
+                            transferLabel(t.transferType) !== t.account && (
+                              <Tag>{transferLabel(t.transferType)}</Tag>
+                            )}
+                          {t.txnNumber && <Tag>Ref {t.txnNumber}</Tag>}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-right font-display font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                {t.kind === "debit" ? inr(t.amount) : ""}
-              </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-right font-display font-semibold tabular-nums">
-                {t.kind === "credit" ? inr(t.amount) : ""}
-              </td>
-              <td className="px-2 py-2.5">
-                {t.isPayment && (
-                  <button
-                    type="button"
-                    onClick={() => setDeleteTarget(t)}
-                    className="rounded p-1 text-muted-foreground opacity-60 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-                    aria-label={`Delete payment ${t.id}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
+                </td>
+
+                <td className="whitespace-nowrap px-4 py-3 text-right align-top font-display font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                  {debit ? inr(t.amount) : ""}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-right align-top font-display font-semibold tabular-nums">
+                  {!debit ? inr(t.amount) : ""}
+                </td>
+                <td
+                  className={cn(
+                    "whitespace-nowrap px-4 py-3 text-right align-top font-display font-bold tabular-nums",
+                    t.balance < 0
+                      ? "text-sky-700 dark:text-sky-400"
+                      : "text-foreground",
+                  )}
+                  title={
+                    t.balance < 0
+                      ? "Advance paid to the vendor"
+                      : "Outstanding after this entry"
+                  }
+                >
+                  {inr(Math.abs(t.balance))}
+                </td>
+
+                <td className="px-2 py-2.5 align-top">
+                  {t.isPayment && (
+                    <div className="flex items-center justify-center gap-0.5 opacity-50 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(t)}
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                        aria-label={`Edit payment ${t.id}`}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(t)}
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={`Delete payment ${t.id}`}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
-        <tfoot className="border-t-2 border-border bg-muted/30 text-sm">
+        <tfoot className="border-t-2 border-border bg-muted/40 text-sm">
           <tr>
-            <td
-              colSpan={4}
-              className="px-3 py-2.5 text-right text-xs text-muted-foreground"
-            >
-              Total of all entries
+            <td colSpan={2} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span className="flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+                    Paid
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-sky-600 dark:bg-sky-400" />
+                    Advance
+                  </span>
+                </span>
+                <span className="font-medium">Total of all entries</span>
+              </div>
             </td>
-            <td className="px-3 py-2.5 text-right font-display font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+            <td className="whitespace-nowrap px-4 py-3 text-right font-display font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
               {inr(ledgerTotals.debit)}
             </td>
-            <td className="px-3 py-2.5 text-right font-display font-bold tabular-nums">
+            <td className="whitespace-nowrap px-4 py-3 text-right font-display font-bold tabular-nums">
               {inr(ledgerTotals.credit)}
+            </td>
+            <td
+              className={cn(
+                "whitespace-nowrap px-4 py-3 text-right font-display font-bold tabular-nums",
+                selectedVendor && selectedVendor.outstanding < 0
+                  ? "text-sky-700 dark:text-sky-400"
+                  : "text-primary",
+              )}
+              title="Current outstanding"
+            >
+              {selectedVendor ? inr(Math.abs(selectedVendor.outstanding)) : ""}
             </td>
             <td />
           </tr>
@@ -1507,7 +2164,7 @@ const PurchasePayment = () => {
 
   const billsTable = (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className={cn("w-full border-collapse text-sm", colLines)}>
         <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
           <tr>
             <th className="w-10 px-3 py-2.5">
@@ -1624,15 +2281,20 @@ const PurchasePayment = () => {
                       </span>
                     )}
                   </p>
-                  <p
-                    className={cn(
-                      "shrink-0 font-display text-base font-bold tabular-nums",
-                      debit && "text-emerald-700 dark:text-emerald-400",
-                    )}
-                  >
-                    {debit ? "-" : "+"}
-                    {inr(t.amount)}
-                  </p>
+                  <div className="shrink-0 text-right">
+                    <p
+                      className={cn(
+                        "font-display text-base font-bold tabular-nums",
+                        debit && "text-emerald-700 dark:text-emerald-400",
+                      )}
+                    >
+                      {debit ? "-" : "+"}
+                      {inr(t.amount)}
+                    </p>
+                    <p className="text-[11px] tabular-nums text-muted-foreground">
+                      Bal {dueText(t.balance)}
+                    </p>
+                  </div>
                 </div>
                 {t.remark && (
                   <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
@@ -1651,13 +2313,20 @@ const PurchasePayment = () => {
               </div>
             </div>
             {t.isPayment && (
-              <div className="mt-2.5 flex justify-end border-t border-border pt-2">
+              <div className="mt-2.5 flex justify-end gap-1 border-t border-border pt-2">
+                <button
+                  type="button"
+                  onClick={() => openEdit(t)}
+                  className="flex h-9 touch-manipulation items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-muted-foreground active:bg-primary/10 active:text-primary"
+                >
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
                 <button
                   type="button"
                   onClick={() => setDeleteTarget(t)}
                   className="flex h-9 touch-manipulation items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-muted-foreground active:bg-destructive/10 active:text-destructive"
                 >
-                  <Trash2 className="h-3.5 w-3.5" /> Delete payment
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
                 </button>
               </div>
             )}
@@ -1762,65 +2431,73 @@ const PurchasePayment = () => {
     </div>
   );
 
-  const deleteDialog = deleteTarget && (
-    <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 animate-in fade-in-0 sm:items-center sm:p-4"
-      onClick={() => !deleting && setDeleteTarget(null)}
-    >
+  const deleteDialog =
+    deleteTarget &&
+    createPortal(
       <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="del-title"
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-t-3xl bg-card p-5 shadow-xl animate-in slide-in-from-bottom-6 duration-200 sm:rounded-2xl"
-        style={{
-          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)",
-        }}
+        className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-in fade-in-0 sm:items-center sm:p-4"
+        onClick={() => !deleting && setDeleteTarget(null)}
       >
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted sm:hidden" />
-        <h2 id="del-title" className="font-display text-lg font-bold">
-          Delete payment #{deleteTarget.id}?
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {inr(deleteTarget.amount)} will be added back to{" "}
-          {selectedVendor?.name ?? "the vendor"}'s outstanding
-          {deleteTarget.account
-            ? ` and to ${deleteTarget.account}'s balance`
-            : ""}
-          .
-        </p>
-        <div className="mt-5 grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setDeleteTarget(null)}
-            disabled={deleting}
-            className="h-11 rounded-xl"
-          >
-            Keep it
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={confirmDelete}
-            disabled={deleting}
-            className="h-11 rounded-xl"
-          >
-            {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Delete
-          </Button>
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="del-title"
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-sm rounded-t-3xl bg-card p-5 shadow-xl animate-in slide-in-from-bottom-6 duration-200 sm:rounded-2xl"
+          style={{
+            paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)",
+          }}
+        >
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-muted sm:hidden" />
+          <h2 id="del-title" className="font-display text-lg font-bold">
+            Delete payment #{deleteTarget.id}?
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {inr(deleteTarget.amount)} will be added back to{" "}
+            {selectedVendor?.name ?? "the vendor"}'s outstanding
+            {deleteTarget.account
+              ? ` and to ${deleteTarget.account}'s balance`
+              : ""}
+            .
+          </p>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+              className="h-11 rounded-xl"
+            >
+              Keep it
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleting}
+              className="h-11 rounded-xl"
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+          </div>
         </div>
-      </div>
-    </div>
-  );
+      </div>,
+      document.body,
+    );
 
   /** Full-screen save loader (stays at least 2 seconds) */
-  const saveLoader = (
+  const busy = saving || editSaving;
+  const saveLoader = createPortal(
     <div
-      className={cn("fixed inset-0 z-[95]", !saving && "pointer-events-none")}
+      className={cn("fixed inset-0 z-[110]", !busy && "pointer-events-none")}
     >
-      <LoadingOverlay active={saving} label="Saving payment…" />
-    </div>
+      <LoadingOverlay
+        active={busy}
+        label={editSaving ? "Updating payment…" : "Saving payment…"}
+      />
+    </div>,
+    document.body,
   );
 
   // ---------- Mobile layout ----------
@@ -2085,6 +2762,17 @@ const PurchasePayment = () => {
           {billFieldBody}
         </BottomSheet>
 
+        {/* Edit payment sheet */}
+        <BottomSheet
+          open={editOpen}
+          onClose={closeEdit}
+          title={editTarget ? `Edit payment #${editTarget.id}` : "Edit payment"}
+          heightClass="h-[88vh]"
+          footer={editActions}
+        >
+          <div className="px-4 pb-4 pt-1">{editFields}</div>
+        </BottomSheet>
+
         {deleteDialog}
         {saveLoader}
       </>
@@ -2284,11 +2972,98 @@ const PurchasePayment = () => {
         </section>
       </div>
 
+      {editDialog}
       {deleteDialog}
       {saveLoader}
     </div>
   );
 };
+
+// ---------- Shared form pieces ----------
+
+const TransferTypePicker = ({
+  value,
+  onChange,
+  error,
+  large,
+}: {
+  value: TransferType | "";
+  onChange: (v: TransferType) => void;
+  error?: string;
+  large?: boolean;
+}) => (
+  <div>
+    <Label className="text-xs">
+      Transfer type <span className="text-destructive">*</span>
+    </Label>
+    <div
+      role="radiogroup"
+      aria-label="Transfer type"
+      aria-invalid={!!error}
+      className="mt-1 grid grid-cols-3 gap-2"
+    >
+      {TRANSFER_TYPES.map((t) => {
+        const Icon = t.icon;
+        const active = value === t.value;
+        return (
+          <button
+            key={t.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(t.value)}
+            className={cn(
+              "flex touch-manipulation flex-col items-center justify-center gap-1 rounded-xl border text-xs font-semibold transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              large ? "h-16 text-sm" : "h-14",
+              active
+                ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
+              error && !active && "border-destructive/60",
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+    {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+  </div>
+);
+
+const AmountInput = ({
+  id,
+  value,
+  onChange,
+  invalid,
+  large,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  invalid?: boolean;
+  large?: boolean;
+}) => (
+  <div className="relative">
+    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-display text-muted-foreground">
+      ₹
+    </span>
+    <Input
+      id={id}
+      inputMode="decimal"
+      value={value}
+      maxLength={13}
+      onChange={(e) => onChange(decimal(e.target.value))}
+      placeholder="0.00"
+      aria-invalid={!!invalid}
+      className={cn(
+        "pl-7 font-display font-semibold tabular-nums",
+        large ? "h-12 text-lg" : "h-10 text-base",
+        invalid && "border-destructive",
+      )}
+    />
+  </div>
+);
 
 // ---------- Bottom sheet (mobile) ----------
 
@@ -2363,7 +3138,7 @@ const BottomSheet = ({
         aria-modal="true"
         aria-label={title}
         className={cn(
-          "absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-3xl bg-card shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+          "absolute inset-x-0 bottom-0 flex max-h-[90vh] flex-col rounded-t-3xl bg-card shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
           heightClass,
           shown ? "translate-y-0" : "translate-y-full",
         )}
