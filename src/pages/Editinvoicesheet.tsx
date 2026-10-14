@@ -65,6 +65,8 @@ const EditInvoiceSheet = ({
   const [discountType, setDiscountType] = useState<"%" | "₹">("₹");
   const [discountValue, setDiscountValue] = useState(0);
   const [paid, setPaid] = useState(0);
+  const [shipping, setShipping] = useState(0);
+  const [labour, setLabour] = useState(0);
   const [items, setItems] = useState<InvoiceItem[]>([]);
 
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
@@ -95,6 +97,8 @@ const EditInvoiceSheet = ({
           setDiscountType("₹");
           setDiscountValue(Number(d.sell_total_discount_amount) || 0);
           setPaid(Number(d.sales_total_paid_amount) || 0);
+          setShipping(Number(d.sell_total_ship_charge) || 0);
+          setLabour(Number(d.sell_total_lebar_charge) || 0);
           setItems(
             (d.items || []).map((it) => ({
               product_id: Number(it.sell_details_product_id),
@@ -169,7 +173,7 @@ const EditInvoiceSheet = ({
     ),
     subtotal,
   );
-  const total = roundOff(subtotal - discountAmount);
+  const total = roundOff(subtotal - discountAmount + shipping + labour);
   const balance = total - paid;
 
   const addProduct = (p: ProductOption) => {
@@ -252,6 +256,8 @@ const EditInvoiceSheet = ({
         sell_date: billDate,
         sell_total_amount: total,
         sell_total_discount_amount: discountAmount,
+        sell_total_ship_charge: shipping,
+        sell_total_lebar_charge: labour,
         sales_total_paid_amount: paid,
         sales_total_remainng_amount: balance,
         customer_mobile: customerMobile,
@@ -490,6 +496,29 @@ const EditInvoiceSheet = ({
                 />
               </div>
 
+              {(
+                [
+                  ["Shipping Charges", shipping, setShipping],
+                  ["Labour Charges", labour, setLabour],
+                ] as const
+              ).map(([label, value, setValue]) => (
+                <div key={label} className="flex items-center gap-2">
+                  <span className="flex-1 text-xs text-muted-foreground">
+                    {label}
+                  </span>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={value || ""}
+                    onChange={(e) =>
+                      setValue(Math.max(Number(e.target.value), 0))
+                    }
+                    placeholder="0"
+                    className="h-7 w-20 text-xs"
+                  />
+                </div>
+              ))}
+
               <div>
                 <Label className="mb-1.5 block text-xs font-semibold">
                   Payment Mode
@@ -533,6 +562,20 @@ const EditInvoiceSheet = ({
                     -₹{discountAmount.toFixed(2)}
                   </span>
                 </div>
+                {shipping > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Shipping</span>
+                    <span className="font-display">
+                      +₹{shipping.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {labour > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Labour</span>
+                    <span className="font-display">+₹{labour.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-1.5 text-base font-bold">
                   <span>Total</span>
                   <span className="font-display text-primary">₹{total}</span>

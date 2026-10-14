@@ -25,6 +25,8 @@ export interface SellPayload {
   sell_table_id?: string | number;
   sell_total_amount: number;
   sell_total_discount_amount: number;
+  sell_total_ship_charge?: number;
+  sell_total_lebar_charge?: number; // labour charge (column name as in tbl_sell)
   sales_total_paid_amount: number;
   sales_total_remainng_amount: number;
   customer_mobile?: string;
@@ -51,6 +53,8 @@ export interface SaleRow {
   sell_customer_number: string | null;
   sell_total_amount: string;
   sell_total_discount_amount: string;
+  sell_total_ship_charge?: string | null;
+  sell_total_lebar_charge?: string | null;
   sales_total_paid_amount: string;
   sales_total_remainng_amount: string;
   sell_payment_stauts: string | null;

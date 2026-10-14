@@ -105,21 +105,23 @@ export const AppHeader = () => {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-9 gap-2 px-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-secondary-foreground text-xs font-semibold font-display">
-                {(user?.username || "U").slice(0, 1).toUpperCase()}
+                {(user?.MobileNumber || "U").slice(0, 1).toUpperCase()}
               </span>
               <span className="hidden sm:inline text-xs font-medium max-w-[100px] truncate">
-                {user?.username}
+                {user?.MobileNumber || "User"}
               </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="flex flex-col gap-0.5">
-              <span className="font-display text-sm">{user?.username}</span>
+              <span className="font-display text-sm">
+                {user?.MobileNumber || "User"}
+              </span>
               <span className="text-[11px] font-normal text-muted-foreground">
                 {user?.role === "restaurant"
                   ? "Restaurant Owner"
                   : "Shop Owner"}{" "}
-                • FY {user?.financialYear || "2025-26"}
+                • FY {user?.financialYear.value || "2025-26"}
               </span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

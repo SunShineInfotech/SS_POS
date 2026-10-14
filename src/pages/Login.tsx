@@ -387,7 +387,7 @@ const Login = () => {
                   </div>
 
                   {/* Role selection – auto‑set from franchise_type, disabled */}
-                  <div className="grid grid-cols-2 gap-2 opacity-70 cursor-not-allowed d-none">
+                  <div className="grid grid-cols-2 gap-2 opacity-70 cursor-not-allowed ">
                     <div
                       className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 ${
                         role === "shop"
@@ -421,7 +421,7 @@ const Login = () => {
                       </span>
                     </div>
                   </div>
-                  <p className="text-[10px] text-muted-foreground text-center -mt-1 d-none">
+                  <p className="text-[10px] text-muted-foreground text-center -mt-1 ">
                     Role is auto‑selected from your company settings
                   </p>
 
@@ -456,7 +456,7 @@ const Login = () => {
                   </div>
 
                   {/* Mode tabs */}
-                  <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted d-none">
+                  <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted ">
                     {(["password", "otp"] as const).map((m) => (
                       <button
                         key={m}
@@ -511,7 +511,7 @@ const Login = () => {
                       <button
                         type="button"
                         onClick={() => setMode("otp")}
-                        className="w-full text-xs text-primary font-medium d-none"
+                        className="w-full text-xs text-primary font-medium "
                       >
                         Login with OTP instead
                       </button>
