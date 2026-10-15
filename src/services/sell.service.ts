@@ -31,7 +31,9 @@ export interface SellPayload {
   sales_total_remainng_amount: number;
   customer_mobile?: string;
   customer_name?: string;
-  payment_mode?: string; // 'Cash' | 'Card' | 'UPI'
+  payment_mode?: string; // 'Cash' | 'Card' | 'UPI', or a split like 'Cash+UPI'
+  // Split payment lines — one tbl_transaction row each. Cash is net of change.
+  payments?: { mode: 'Cash' | 'Card' | 'UPI'; amount: number }[];
   items: SellItemPayload[];
 }
 

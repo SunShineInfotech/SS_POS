@@ -263,6 +263,18 @@ const EditInvoiceSheet = ({
         customer_mobile: customerMobile,
         customer_name: customerName || "Walk-in",
         payment_mode: paymentMode,
+        // Single mode -> re-sync the bill's tbl_transaction row. A split bill
+        // ("Cash+UPI") left untouched keeps its existing payment rows.
+        ...(paymentMode === "Cash" ||
+        paymentMode === "Card" ||
+        paymentMode === "UPI"
+          ? {
+              payments:
+                paid > 0
+                  ? [{ mode: paymentMode, amount: Math.min(paid, total) }]
+                  : [],
+            }
+          : {}),
         items: payloadItems,
       });
 

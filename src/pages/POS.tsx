@@ -140,7 +140,9 @@ interface ReceiptData {
   total: number;
   paid: number;
   due: number;
-  paymentMode: PaymentMode;
+  paymentMode: string; // e.g. "Cash" or "Cash+UPI"
+  payments: { mode: PaymentMode; amount: number }[];
+  change: number;
 }
 
 /* ============================================================
@@ -176,6 +178,12 @@ const PAYMENT_MODES: {
   { value: "Card", label: "Card", icon: CreditCard },
   { value: "UPI", label: "UPI", icon: Smartphone },
 ];
+
+const emptyModeAmounts = (): Record<PaymentMode, string> => ({
+  Cash: "",
+  Card: "",
+  UPI: "",
+});
 
 const roundOff = (v: number): number =>
   v - Math.floor(v) < 0.5 ? Math.floor(v) : Math.ceil(v);
@@ -315,7 +323,14 @@ const printReceipt = (r: ReceiptData) => {
     ${r.labour > 0 ? line("Labour", `₹${fmt(r.labour)}`) : ""}
     <hr/>
     ${line("TOTAL", `₹${fmt(r.total)}`, "big")}
-    ${line(`Paid (${r.paymentMode})`, `₹${fmt(r.paid)}`)}
+    ${
+      r.payments.length > 1
+        ? r.payments
+            .map((p) => line(`Paid (${p.mode})`, `₹${fmt(p.amount)}`))
+            .join("")
+        : line(`Paid (${r.paymentMode})`, `₹${fmt(r.paid)}`)
+    }
+    ${r.change > 0 ? line("Change returned", `₹${fmt(r.change)}`) : ""}
     ${r.due > 0 ? line("Due", `₹${fmt(r.due)}`) : ""}
     <hr/>
     <div class="c">Thank you! Visit again</div>
@@ -713,8 +728,11 @@ const POS = () => {
   // ----- Payment -----
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentStep, setPaymentStep] = useState<1 | 2>(1); // 1 = payment, 2 = done
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>("Cash");
-  const [receivedInput, setReceivedInput] = useState("");
+  // Split payment: each selected mode gets its own amount box
+  const [selectedModes, setSelectedModes] = useState<PaymentMode[]>(["Cash"]);
+  const [modeAmounts, setModeAmounts] =
+    useState<Record<PaymentMode, string>>(emptyModeAmounts);
+  const modeInputRefs = useRef<Partial<Record<PaymentMode, HTMLInputElement | null>>>({});
   const [processing, setProcessing] = useState({ active: false, current: 0 });
   const [completedBill, setCompletedBill] = useState<ReceiptData | null>(null);
   const [upiId, setUpiId] = useState<string>(() => {
@@ -916,11 +934,33 @@ const POS = () => {
   }, [cart.length]);
 
   // Payment-derived values
-  const received = Math.max(Number(receivedInput) || 0, 0);
+  const modeAmount = (m: PaymentMode) =>
+    selectedModes.includes(m)
+      ? round2(Math.max(Number(modeAmounts[m]) || 0, 0))
+      : 0;
+  const cashIn = modeAmount("Cash");
+  const nonCashIn = round2(modeAmount("Card") + modeAmount("UPI"));
+  const received = round2(cashIn + nonCashIn);
   const paidNow = Math.min(received, finalTotal);
   const dueNow = round2(finalTotal - paidNow);
-  const changeToReturn =
-    paymentMode === "Cash" ? round2(Math.max(received - finalTotal, 0)) : 0;
+  const changeToReturn = round2(Math.max(received - finalTotal, 0));
+  // Change can only be handed back from cash — card / UPI can't exceed the bill
+  const paymentError =
+    nonCashIn > finalTotal
+      ? "Card + UPI amount is more than the bill total"
+      : changeToReturn > cashIn
+        ? "Amount received is more than the bill total"
+        : "";
+  // What actually stays with the store per mode (cash is net of change)
+  const paymentLines = PAYMENT_MODES.map(({ value }) => ({
+    mode: value,
+    amount:
+      value === "Cash" ? round2(cashIn - changeToReturn) : modeAmount(value),
+  })).filter((p) => p.amount > 0);
+  const paymentModeLabel = paymentLines.length
+    ? paymentLines.map((p) => p.mode).join("+")
+    : selectedModes[0] || "Cash";
+  const remainingToEnter = round2(Math.max(finalTotal - received, 0));
 
   /* ---------- Customer ---------- */
   const lookupCustomer = async (mobile: string) => {
@@ -1103,13 +1143,32 @@ const POS = () => {
   const openPayment = () => {
     if (!cart.length) return toast.error("Cart is empty");
     if (!isMobileValid()) return;
-    setPaymentMode("Cash");
-    setReceivedInput(String(finalTotal));
+    setSelectedModes(["Cash"]);
+    setModeAmounts(emptyModeAmounts());
     setPaymentStep(1);
     setCompletedBill(null);
     setMobileCartOpen(false);
     setPaymentOpen(true);
   };
+
+  const togglePaymentMode = (mode: PaymentMode) => {
+    if (selectedModes.includes(mode)) {
+      if (selectedModes.length === 1) return; // keep at least one mode
+      setSelectedModes((s) => s.filter((m) => m !== mode));
+      setModeAmounts((a) => ({ ...a, [mode]: "" }));
+    } else {
+      setSelectedModes((s) => [...s, mode]);
+      // Let the input enable before focusing it
+      setTimeout(() => modeInputRefs.current[mode]?.focus(), 0);
+    }
+  };
+
+  // Puts whatever is still unpaid into this mode's box
+  const fillRemaining = (mode: PaymentMode) =>
+    setModeAmounts((a) => ({
+      ...a,
+      [mode]: String(round2(modeAmount(mode) + remainingToEnter)),
+    }));
 
   const closePayment = (open: boolean) => {
     if (open || processing.active) return;
@@ -1139,6 +1198,7 @@ const POS = () => {
 
   const handlePrintBill = async () => {
     if (!cart.length) return toast.error("Cart is empty");
+    if (paymentError) return toast.error(paymentError);
     if (received <= 0 && finalTotal > 0) {
       const ok = window.confirm(
         "No amount received. Save the full amount as due?",
@@ -1201,7 +1261,8 @@ const POS = () => {
         sell_table_id: 2,
         customer_mobile: details.mobile || undefined,
         customer_name: details.name.trim() || "Walk-in",
-        payment_mode: paymentMode,
+        payment_mode: paymentModeLabel,
+        payments: paymentLines,
         items: cart.map((i) => ({
           product_id: i.id,
           single_product_price: i.final_amount,
@@ -1233,7 +1294,9 @@ const POS = () => {
         total: finalTotal,
         paid: paidNow,
         due: dueNow,
-        paymentMode,
+        paymentMode: paymentModeLabel,
+        payments: paymentLines,
+        change: changeToReturn,
       };
       printReceipt(receipt);
 
@@ -1254,7 +1317,7 @@ const POS = () => {
   const upiLink = upiId
     ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
         profile.company_name || "Store",
-      )}&am=${paidNow.toFixed(2)}&cu=INR&tn=${encodeURIComponent("POS Bill")}`
+      )}&am=${modeAmount("UPI").toFixed(2)}&cu=INR&tn=${encodeURIComponent("POS Bill")}`
     : "";
 
   const saveUpiId = () => {
@@ -1724,29 +1787,27 @@ const POS = () => {
                   : "border-border hover:border-primary/40 hover:shadow-md",
               )}
             >
-              <div className="relative">
-                <ProductImage
-                  src={product.image}
-                  alt={product.name}
-                  className="aspect-square w-full rounded-lg"
-                />
-                {inCart && (
-                  <button
-                    type="button"
-                    aria-label={`Remove all ${product.name} from cart`}
-                    title="Remove from cart"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFromCart(product.id);
-                    }}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    className="ldr-anim absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-card/95 text-destructive shadow-md ring-1 ring-border backdrop-blur transition-colors hover:bg-destructive hover:text-destructive-foreground active:scale-90"
-                    style={{ animation: "ldr-pop .2s ease-out both" }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+              {/* Remove-all: frosted glass close button in the image corner */}
+              {inCart && (
+                <button
+                  type="button"
+                  aria-label={`Remove all ${product.name} from cart`}
+                  title="Remove from cart"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeFromCart(product.id);
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="absolute right-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/45 text-white shadow-[0_2px_8px_rgba(0,0,0,0.25)] ring-1 ring-white/40 backdrop-blur-md duration-200 animate-in fade-in zoom-in-75 transition-all hover:rotate-90 hover:bg-black/70 active:scale-90"
+                >
+                  <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                </button>
+              )}
+              <ProductImage
+                src={product.image}
+                alt={product.name}
+                className="aspect-square w-full rounded-lg"
+              />
               <div className="px-1 pb-0.5 pt-1.5">
                 <p className="line-clamp-2 min-h-[2rem] text-xs font-medium leading-4">
                   {product.name}
@@ -2170,7 +2231,7 @@ const POS = () => {
         onOpenChange={closePayment}
         isMobile={isMobile}
         preventClose={processing.active}
-        wide={paymentStep === 1 && paymentMode === "UPI"}
+        wide={paymentStep === 1 && selectedModes.includes("UPI")}
         title={paymentStep === 1 ? "Payment" : "Bill Completed"}
         description={
           paymentStep === 1
@@ -2240,7 +2301,8 @@ const POS = () => {
           <div
             className={cn(
               "gap-4",
-              paymentMode === "UPI" && "md:grid md:grid-cols-[1fr_220px]",
+              selectedModes.includes("UPI") &&
+                "md:grid md:grid-cols-[1fr_220px]",
             )}
           >
             <div className="space-y-4">
@@ -2259,70 +2321,124 @@ const POS = () => {
                 )}
               </div>
 
-              {/* Payment mode */}
+              {/* Payment modes — tap one or more (split), amount per selected mode */}
               <div>
-                <Label className="text-xs text-muted-foreground">
-                  Payment Mode
-                </Label>
-                <div className="mt-1.5 grid grid-cols-3 gap-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">
+                    Payment Mode
+                  </Label>
+                  {paidNow < finalTotal && paidNow > 0 ? (
+                    <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning">
+                      Partial payment
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">
+                      Tap more than one to split
+                    </span>
+                  )}
+                </div>
+
+                {/* Side-by-side selector */}
+                <div className="mt-1.5 grid grid-cols-3 gap-1 rounded-xl bg-muted/60 p-1">
                   {PAYMENT_MODES.map(({ value, label, icon: Icon }) => {
-                    const active = paymentMode === value;
+                    const active = selectedModes.includes(value);
                     return (
                       <button
                         key={value}
                         type="button"
-                        onClick={() => {
-                          setPaymentMode(value);
-                          if (value !== "Cash" && received > finalTotal)
-                            setReceivedInput(String(finalTotal));
-                        }}
+                        aria-pressed={active}
+                        onClick={() => togglePaymentMode(value)}
                         className={cn(
-                          "flex flex-col items-center gap-1.5 rounded-2xl border-2 py-3 text-xs font-semibold transition-all active:scale-95",
+                          "relative flex h-10 items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold transition-all duration-200 active:scale-[0.97]",
                           active
-                            ? "border-primary bg-primary/10 text-primary shadow-sm"
-                            : "border-border text-muted-foreground hover:border-primary/40",
+                            ? "bg-card text-primary shadow-sm ring-1 ring-primary/30"
+                            : "text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        <Icon className="h-5 w-5" />
+                        <Icon className="h-4 w-4 shrink-0" />
                         {label}
+                        {active && (
+                          <span className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-primary-foreground animate-in zoom-in-50">
+                            <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
-              </div>
 
-              {/* Amount */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">
-                    {paymentMode === "Cash"
-                      ? "Amount Received"
-                      : "Amount Paying Now"}
-                  </Label>
-                  {paidNow < finalTotal && paidNow > 0 && (
-                    <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning">
-                      Partial payment
-                    </span>
-                  )}
+                {/* Amount for each selected mode */}
+                <div className="mt-2 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+                  {PAYMENT_MODES.filter(({ value }) =>
+                    selectedModes.includes(value),
+                  ).map(({ value, label, icon: Icon }) => (
+                    <div
+                      key={value}
+                      className="flex items-center gap-2.5 px-2.5 py-2 animate-in fade-in slide-in-from-top-1"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1 leading-tight">
+                        <p className="text-sm font-medium">{label}</p>
+                        {remainingToEnter > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => fillRemaining(value)}
+                            className="text-[11px] font-medium text-primary hover:underline"
+                          >
+                            Fill balance ₹{fmt(remainingToEnter)}
+                          </button>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground">
+                            Amount received
+                          </p>
+                        )}
+                      </div>
+                      <div className="relative w-32 shrink-0">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-display text-sm text-muted-foreground">
+                          ₹
+                        </span>
+                        <Input
+                          ref={(el) => (modeInputRefs.current[value] = el)}
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          placeholder="0"
+                          value={modeAmounts[value]}
+                          onChange={(e) =>
+                            setModeAmounts((a) => ({
+                              ...a,
+                              [value]: e.target.value,
+                            }))
+                          }
+                          onFocus={(e) => e.target.select()}
+                          className="h-10 rounded-lg pl-6 text-right font-display text-base font-semibold"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="relative mt-1">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-display text-lg text-muted-foreground">
-                    ₹
-                  </span>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    value={receivedInput}
-                    onChange={(e) => setReceivedInput(e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                    className="h-12 rounded-xl pl-8 font-display text-lg font-semibold"
-                  />
-                </div>
+
+                {paymentError && (
+                  <p className="mt-2 rounded-lg bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive">
+                    {paymentError}
+                  </p>
+                )}
               </div>
 
               {/* Summary */}
               <div className="space-y-1.5 rounded-2xl bg-muted/50 p-3 text-sm">
+                {paymentLines.length > 1 &&
+                  paymentLines.map((p) => (
+                    <div
+                      key={p.mode}
+                      className="flex justify-between text-xs text-muted-foreground"
+                    >
+                      <span>{p.mode}</span>
+                      <span className="font-display">₹{fmt(p.amount)}</span>
+                    </div>
+                  ))}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Paying now</span>
                   <span className="font-display font-semibold">
@@ -2352,7 +2468,7 @@ const POS = () => {
             </div>
 
             {/* UPI QR */}
-            {paymentMode === "UPI" && (
+            {selectedModes.includes("UPI") && (
               <div className="mt-4 flex flex-col items-center rounded-2xl border border-border bg-card p-4 text-center md:mt-0">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                   <QrCode className="h-4 w-4 text-primary" />
@@ -2379,13 +2495,13 @@ const POS = () => {
                       Save UPI ID
                     </Button>
                   </div>
-                ) : paidNow > 0 ? (
+                ) : modeAmount("UPI") > 0 ? (
                   <>
                     <div className="mt-3 rounded-xl bg-white p-2.5 shadow-sm">
                       <QRCodeSVG value={upiLink} size={168} level="M" />
                     </div>
                     <p className="mt-3 font-display text-lg font-bold">
-                      ₹{fmt(paidNow)}
+                      ₹{fmt(modeAmount("UPI"))}
                     </p>
                     <p className="max-w-full truncate text-[11px] text-muted-foreground">
                       {upiId}
@@ -2403,7 +2519,7 @@ const POS = () => {
                   </>
                 ) : (
                   <p className="mt-4 text-xs text-muted-foreground">
-                    Enter an amount to generate the QR
+                    Enter the UPI amount to generate the QR
                   </p>
                 )}
               </div>

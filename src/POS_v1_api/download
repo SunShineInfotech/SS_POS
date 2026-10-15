@@ -1,0 +1,109 @@
+# =====================================================================
+#  SunShine POS - PHP Backend  ->  /POS/v1_api/.htaccess
+#  Place this file inside the /POS/v1_api/ folder
+# =====================================================================
+
+Options -Indexes -MultiViews
+ServerSignature Off
+DirectoryIndex disabled
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ---------- Force HTTPS ----------
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # ---------- Only allow API methods ----------
+    RewriteCond %{REQUEST_METHOD} !^(GET|POST|OPTIONS)$ [NC]
+    RewriteRule ^ - [F,L]
+
+    # ---------- CORS preflight -> respond 200 immediately ----------
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^ - [R=200,L]
+
+    # ---------- Block hidden files ----------
+    RewriteRule (^|/)\. - [F,L]
+
+    # ---------- Block internal folders from direct browser access ----------
+    RewriteRule ^(config|includes|inc|lib|vendor|classes|helpers|logs|backup|cron)(/|$) - [F,L]
+
+    # ---------- Never execute scripts inside uploads (shell upload protection) ----------
+    RewriteRule ^uploads/.*\.(php\d?|phtml|phar|pl|py|cgi|sh|asp|aspx|jsp)$ - [F,L,NC]
+
+    # ---------- Block SQL injection / traversal patterns ----------
+    RewriteCond %{QUERY_STRING} (union.*select|insert.*into|drop.*table|information_schema|sleep\(|benchmark\() [NC,OR]
+    RewriteCond %{QUERY_STRING} (\.\./|\.\.%2F|%00|<script) [NC]
+    RewriteRule ^ - [F,L]
+</IfModule>
+
+# ---------- DB config / connection files: never directly accessible ----------
+# (they still work via require/include from other PHP files)
+<FilesMatch "^(config|db|database|conn|connection|dbconfig|db_config|db_connect|constants|functions|common)\.php$">
+    Require all denied
+</FilesMatch>
+
+# ---------- Deny everything that is not PHP or an uploaded image/pdf ----------
+<FilesMatch "\.(env|ini|log|sql|bak|backup|old|orig|swp|sh|lock|md|txt|json|yml|yaml|xml|zip|tar|gz|rar|7z|inc)$">
+    Require all denied
+</FilesMatch>
+
+# ---------- Security + API headers ----------
+<IfModule mod_headers.c>
+    Header always set Strict-Transport-Security "max-age=31536000"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+    Header always unset X-Powered-By
+    Header unset X-Powered-By
+    Header unset Server
+
+    # API responses must never be cached (POS data, balances, bills)
+    <FilesMatch "\.php$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate, private"
+        Header set Pragma "no-cache"
+    </FilesMatch>
+
+    # ---------- CORS: allow ONLY your own domain ----------
+    # Only sunshineproduct.in is allowed
+    SetEnvIf Origin "^https://(www\.)?sunshineproduct\.in$" CORS_ORIGIN=$0
+    Header always set Access-Control-Allow-Origin "%{CORS_ORIGIN}e" env=CORS_ORIGIN
+    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS" env=CORS_ORIGIN
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With" env=CORS_ORIGIN
+    Header always set Access-Control-Allow-Credentials "true" env=CORS_ORIGIN
+    Header always set Access-Control-Max-Age "86400" env=CORS_ORIGIN
+    Header merge Vary "Origin"
+</IfModule>
+
+# ---------- PHP settings (only applied if PHP runs as Apache module) ----------
+# On PHP-FPM / LiteSpeed hosting, put these in a .user.ini file instead.
+<IfModule mod_php.c>
+    php_flag  display_errors          Off
+    php_flag  display_startup_errors  Off
+    php_flag  log_errors              On
+    php_flag  allow_url_include       Off
+    php_flag  session.cookie_httponly On
+    php_flag  session.cookie_secure   On
+    php_flag  session.use_only_cookies On
+    php_value session.cookie_samesite "Strict"
+    php_value upload_max_filesize     5M
+    php_value post_max_size           8M
+    php_value max_execution_time      60
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag  display_errors          Off
+    php_flag  display_startup_errors  Off
+    php_flag  log_errors              On
+    php_flag  allow_url_include       Off
+    php_flag  session.cookie_httponly On
+    php_flag  session.cookie_secure   On
+    php_flag  session.use_only_cookies On
+    php_value upload_max_filesize     5M
+    php_value post_max_size           8M
+    php_value max_execution_time      60
+</IfModule>
+
+# ---------- Limit request body size (8 MB) ----------
+LimitRequestBody 8388608
