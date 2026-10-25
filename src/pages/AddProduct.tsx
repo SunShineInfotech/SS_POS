@@ -36,11 +36,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Boxes,
   Check,
   ChevronsUpDown,
+  IndianRupee,
   Loader2,
+  Package,
   PackagePlus,
   Plus,
+  Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -48,7 +52,67 @@ import {
   ProductService,
   ProductPayload,
   ProductType,
+  calculateMrpWithGst,
 } from "@/services/product.service";
+
+// Form section wrapper: heading + description + grid of fields
+const FormSection = ({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) => (
+  <section className="rounded-xl border border-border p-4">
+    <div className="mb-4 flex items-center gap-2">
+      <Icon className="h-4 w-4 text-primary" />
+      <h3 className="text-sm font-semibold">{title}</h3>
+      {description && (
+        <span className="text-xs text-muted-foreground">— {description}</span>
+      )}
+    </div>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {children}
+    </div>
+  </section>
+);
+
+// Compact pill-style radio option
+const PillOption = ({
+  id,
+  value,
+  label,
+  checked,
+  disabled,
+}: {
+  id: string;
+  value: string;
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+}) => (
+  <label
+    htmlFor={id}
+    className={cn(
+      "flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors",
+      checked
+        ? "border-primary bg-primary/5 font-medium text-primary"
+        : "border-border text-muted-foreground hover:bg-muted/50",
+    )}
+  >
+    <RadioGroupItem
+      value={value}
+      id={id}
+      disabled={disabled}
+      className="h-3.5 w-3.5"
+    />
+    {label}
+  </label>
+);
 
 const getCompanyData = () => {
   const raw = localStorage.getItem("company_data");
@@ -105,6 +169,13 @@ const ProductForm = () => {
 
   const selectedCategory = categories.find(
     (c) => c.category_id === Number(formData.product_cat_id),
+  );
+
+  // MRP = Base Price + CGST amount + SGST amount (auto-calculated, read-only)
+  const gst = calculateMrpWithGst(
+    Number(formData.product_base_price),
+    Number(formData.product_cgst),
+    Number(formData.product_sgst),
   );
 
   // Validate ID on edit
@@ -348,7 +419,7 @@ const ProductForm = () => {
         product_cgst: Number(formData.product_cgst),
         product_sgst: Number(formData.product_sgst),
         product_igst: Number(formData.product_igst),
-        product_mrp_with_gst: Number(formData.product_mrp_with_gst),
+        product_mrp_with_gst: gst.mrp,
         product_final_amount: Number(formData.product_final_amount),
         product_hsn_code: formData.product_hsn_code || "",
         product_sku: formData.product_sku || "",
@@ -435,368 +506,300 @@ const ProductForm = () => {
           </>
         ) : (
           <form onSubmit={handleSubmit}>
-            <CardContent className="grid grid-cols-1 gap-5 pt-6 md:grid-cols-2">
-              {/* Row 1 */}
-              <div>
-                <Label htmlFor="product_name" className="text-xs font-semibold">
-                  Product Name *
-                </Label>
-                <Input
-                  id="product_name"
-                  name="product_name"
-                  value={formData.product_name || ""}
-                  onChange={handleChange}
-                  placeholder="e.g. Classic Coffee"
-                  disabled={saving}
-                  required
-                  className="mt-1.5"
-                />
-              </div>
+            <CardContent className="space-y-5 pt-6">
+              {/* ===================== Product Details ===================== */}
+              <FormSection
+                icon={Package}
+                title="Product Details"
+                description="Basic information"
+              >
+                <div className="sm:col-span-2">
+                  <Label
+                    htmlFor="product_name"
+                    className="text-xs font-semibold"
+                  >
+                    Product Name *
+                  </Label>
+                  <Input
+                    id="product_name"
+                    name="product_name"
+                    value={formData.product_name || ""}
+                    onChange={handleChange}
+                    placeholder="e.g. Classic Coffee"
+                    disabled={saving}
+                    required
+                    className="mt-1.5"
+                  />
+                </div>
 
-              {/* Category (searchable + "Add new category") */}
-              <div>
-                <Label className="text-xs font-semibold">Category *</Label>
-                <div className="mt-1.5">
-                  <Popover open={catOpen} onOpenChange={setCatOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={catOpen}
-                        disabled={saving}
-                        className="w-full justify-between font-normal"
-                      >
-                        <span
-                          className={cn(
-                            "truncate",
-                            !selectedCategory && "text-muted-foreground",
-                          )}
-                        >
-                          {selectedCategory
-                            ? selectedCategory.category_name
-                            : "Select a category"}
-                        </span>
-                        {catLoading ? (
-                          <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-50" />
-                        ) : (
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-
-                    <PopoverContent
-                      className="w-[var(--radix-popover-trigger-width)] p-0"
-                      align="start"
-                    >
-                      <Command>
-                        <CommandInput
-                          placeholder="Search category..."
-                          value={catSearch}
-                          onValueChange={setCatSearch}
-                        />
-                        <CommandList>
-                          <CommandEmpty>No category found.</CommandEmpty>
-                          <CommandGroup>
-                            {categories.map((c) => (
-                              <CommandItem
-                                key={c.category_id}
-                                value={`${c.category_name} ${c.category_id}`}
-                                onSelect={() => {
-                                  selectCategory(c.category_id);
-                                  setCatOpen(false);
-                                  setCatSearch("");
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    Number(formData.product_cat_id) ===
-                                      c.category_id
-                                      ? "opacity-100"
-                                      : "opacity-0",
-                                  )}
-                                />
-                                {c.category_name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-
-                      {/* Hamesha visible, search match ho ya na ho */}
-                      <div className="border-t border-border p-1">
+                {/* Category (searchable + "Add new category") */}
+                <div className="sm:col-span-2">
+                  <Label className="text-xs font-semibold">Category *</Label>
+                  <div className="mt-1.5">
+                    <Popover open={catOpen} onOpenChange={setCatOpen}>
+                      <PopoverTrigger asChild>
                         <Button
                           type="button"
-                          variant="ghost"
-                          onClick={openCategoryDialog}
-                          className="w-full justify-start gap-2 text-sm font-medium text-primary hover:text-primary"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={catOpen}
+                          disabled={saving}
+                          className="w-full justify-between font-normal"
                         >
-                          <Plus className="h-4 w-4" />
-                          {catSearch.trim()
-                            ? `Add "${catSearch.trim()}" as new category`
-                            : "Add new category"}
+                          <span
+                            className={cn(
+                              "truncate",
+                              !selectedCategory && "text-muted-foreground",
+                            )}
+                          >
+                            {selectedCategory
+                              ? selectedCategory.category_name
+                              : "Select a category"}
+                          </span>
+                          {catLoading ? (
+                            <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-50" />
+                          ) : (
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          )}
                         </Button>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                      </PopoverTrigger>
+
+                      <PopoverContent
+                        className="w-[var(--radix-popover-trigger-width)] p-0"
+                        align="start"
+                      >
+                        <Command>
+                          <CommandInput
+                            placeholder="Search category..."
+                            value={catSearch}
+                            onValueChange={setCatSearch}
+                          />
+                          <CommandList>
+                            <CommandEmpty>No category found.</CommandEmpty>
+                            <CommandGroup>
+                              {categories.map((c) => (
+                                <CommandItem
+                                  key={c.category_id}
+                                  value={`${c.category_name} ${c.category_id}`}
+                                  onSelect={() => {
+                                    selectCategory(c.category_id);
+                                    setCatOpen(false);
+                                    setCatSearch("");
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      Number(formData.product_cat_id) ===
+                                        c.category_id
+                                        ? "opacity-100"
+                                        : "opacity-0",
+                                    )}
+                                  />
+                                  {c.category_name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+
+                        {/* Hamesha visible, search match ho ya na ho */}
+                        <div className="border-t border-border p-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={openCategoryDialog}
+                            className="w-full justify-start gap-2 text-sm font-medium text-primary hover:text-primary"
+                          >
+                            <Plus className="h-4 w-4" />
+                            {catSearch.trim()
+                              ? `Add "${catSearch.trim()}" as new category`
+                              : "Add new category"}
+                          </Button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
-              </div>
 
-              {/* Row 2 */}
-              <div>
-                <Label
-                  htmlFor="product_image"
-                  className="text-xs font-semibold"
-                >
-                  Image
-                </Label>
-                <Input
-                  id="product_image"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  disabled={saving}
-                  className="mt-1.5"
-                />
-                {imagePreview && (
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="mt-2 h-20 w-20 rounded-lg border object-cover"
-                  />
+                {/* Shop-only fields (franchise_type === 1) */}
+                {franchiseType === 1 && (
+                  <>
+                    <div>
+                      <Label
+                        htmlFor="product_variant_name"
+                        className="text-xs font-semibold"
+                      >
+                        Variant Name
+                      </Label>
+                      <Input
+                        id="product_variant_name"
+                        name="product_variant_name"
+                        value={formData.product_variant_name || ""}
+                        onChange={handleChange}
+                        placeholder="e.g. Large"
+                        disabled={saving}
+                        className="mt-1.5"
+                      />
+                    </div>
+                    <div>
+                      <Label
+                        htmlFor="product_sku"
+                        className="text-xs font-semibold"
+                      >
+                        SKU
+                      </Label>
+                      <Input
+                        id="product_sku"
+                        name="product_sku"
+                        value={formData.product_sku || ""}
+                        onChange={handleChange}
+                        placeholder="e.g. COF-001"
+                        disabled={saving}
+                        className="mt-1.5"
+                      />
+                    </div>
+                    <div>
+                      <Label
+                        htmlFor="product_hsn_code"
+                        className="text-xs font-semibold"
+                      >
+                        HSN Code
+                      </Label>
+                      <Input
+                        id="product_hsn_code"
+                        name="product_hsn_code"
+                        value={formData.product_hsn_code || ""}
+                        onChange={handleChange}
+                        placeholder="e.g. 2101"
+                        disabled={saving}
+                        className="mt-1.5"
+                      />
+                    </div>
+                  </>
                 )}
-              </div>
 
-              <div>
-                <Label
-                  htmlFor="product_mrp_with_gst"
-                  className="text-xs font-semibold"
-                >
-                  MRP (with GST)
-                </Label>
-                <Input
-                  id="product_mrp_with_gst"
-                  name="product_mrp_with_gst"
-                  type="number"
-                  step="0.01"
-                  value={formData.product_mrp_with_gst || ""}
-                  onChange={handleChange}
-                  disabled={saving}
-                  className="mt-1.5"
-                />
-              </div>
-
-              {/* Status (full width) */}
-              <div className="md:col-span-2">
-                <Label className="mb-2 block text-xs font-semibold">
-                  Status
-                </Label>
-                <RadioGroup
-                  value={String(formData.product_is_active)}
-                  onValueChange={(val) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      product_is_active: Number(val) as 1 | 2,
-                    }))
-                  }
-                  className="grid grid-cols-1 gap-3 sm:grid-cols-2"
-                >
-                  <label
-                    htmlFor="p-active"
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-sm transition-colors ${
-                      formData.product_is_active === 1
-                        ? "border-primary bg-primary/5 text-primary font-medium"
-                        : "border-border text-muted-foreground"
-                    }`}
+                <div className={franchiseType === 1 ? "" : "sm:col-span-2"}>
+                  <Label
+                    htmlFor="product_image"
+                    className="text-xs font-semibold"
                   >
-                    <RadioGroupItem value="1" id="p-active" disabled={saving} />
-                    Active
-                  </label>
-                  <label
-                    htmlFor="p-inactive"
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-sm transition-colors ${
-                      formData.product_is_active === 2
-                        ? "border-primary bg-primary/5 text-primary font-medium"
-                        : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    <RadioGroupItem
-                      value="2"
-                      id="p-inactive"
-                      disabled={saving}
-                    />
-                    Inactive
-                  </label>
-                </RadioGroup>
-              </div>
-
-              {/* Product Type (full width) */}
-              <div className="md:col-span-2">
-                <Label className="mb-2 block text-xs font-semibold">
-                  Product Type
-                </Label>
-                <RadioGroup
-                  value={String(formData.product_type)}
-                  onValueChange={(val) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      product_type: Number(val) as ProductType,
-                    }))
-                  }
-                  className="grid grid-cols-1 gap-3 sm:grid-cols-3"
-                >
-                  <label
-                    htmlFor="p-sales"
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-sm transition-colors ${
-                      formData.product_type === 1
-                        ? "border-primary bg-primary/5 text-primary font-medium"
-                        : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    <RadioGroupItem value="1" id="p-sales" disabled={saving} />
-                    Sales
-                  </label>
-                  <label
-                    htmlFor="p-purchase"
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-sm transition-colors ${
-                      formData.product_type === 2
-                        ? "border-primary bg-primary/5 text-primary font-medium"
-                        : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    <RadioGroupItem
-                      value="2"
-                      id="p-purchase"
-                      disabled={saving}
-                    />
-                    Purchase
-                  </label>
-                  <label
-                    htmlFor="p-both"
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-sm transition-colors ${
-                      formData.product_type === 3
-                        ? "border-primary bg-primary/5 text-primary font-medium"
-                        : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    <RadioGroupItem value="3" id="p-both" disabled={saving} />
-                    Both
-                  </label>
-                </RadioGroup>
-              </div>
-
-              {/* Shop-only fields (franchise_type === 1) — fragment, so children join the same grid */}
-              {franchiseType === 1 && (
-                <>
-                  <div>
-                    <Label
-                      htmlFor="product_variant_name"
-                      className="text-xs font-semibold"
-                    >
-                      Variant Name
-                    </Label>
+                    Image
+                  </Label>
+                  <div className="mt-1.5 flex items-center gap-3">
                     <Input
-                      id="product_variant_name"
-                      name="product_variant_name"
-                      value={formData.product_variant_name || ""}
-                      onChange={handleChange}
-                      placeholder="e.g. Large"
+                      id="product_image"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
                       disabled={saving}
-                      className="mt-1.5"
                     />
-                  </div>
-                  <div>
-                    <Label
-                      htmlFor="product_sku"
-                      className="text-xs font-semibold"
-                    >
-                      SKU
-                    </Label>
-                    <Input
-                      id="product_sku"
-                      name="product_sku"
-                      value={formData.product_sku || ""}
-                      onChange={handleChange}
-                      placeholder="e.g. COF-001"
-                      disabled={saving}
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
-                    <Label
-                      htmlFor="product_hsn_code"
-                      className="text-xs font-semibold"
-                    >
-                      HSN Code
-                    </Label>
-                    <Input
-                      id="product_hsn_code"
-                      name="product_hsn_code"
-                      value={formData.product_hsn_code || ""}
-                      onChange={handleChange}
-                      placeholder="e.g. 2101"
-                      disabled={saving}
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
-                    <Label
-                      htmlFor="product_base_price"
-                      className="text-xs font-semibold"
-                    >
-                      Base Price
-                    </Label>
-                    <Input
-                      id="product_base_price"
-                      name="product_base_price"
-                      type="number"
-                      step="0.01"
-                      value={formData.product_base_price || ""}
-                      onChange={handleChange}
-                      disabled={saving}
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  {/* CGST / SGST / IGST — full width row, 3 cols on sm+, stacked on mobile */}
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:col-span-2">
-                    <div>
-                      <Label
-                        htmlFor="product_cgst"
-                        className="text-xs font-semibold"
-                      >
-                        CGST %
-                      </Label>
-                      <Input
-                        id="product_cgst"
-                        name="product_cgst"
-                        type="number"
-                        step="0.01"
-                        value={formData.product_cgst || ""}
-                        onChange={handleChange}
-                        disabled={saving}
-                        className="mt-1.5"
+                    {imagePreview && (
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="h-10 w-10 shrink-0 rounded-md border object-cover"
                       />
-                    </div>
-                    <div>
-                      <Label
-                        htmlFor="product_sgst"
-                        className="text-xs font-semibold"
-                      >
-                        SGST %
-                      </Label>
-                      <Input
-                        id="product_sgst"
-                        name="product_sgst"
-                        type="number"
-                        step="0.01"
-                        value={formData.product_sgst || ""}
-                        onChange={handleChange}
-                        disabled={saving}
-                        className="mt-1.5"
-                      />
-                    </div>
+                    )}
+                  </div>
+                </div>
+              </FormSection>
+
+              {/* ===================== Amount ===================== */}
+              <FormSection
+                icon={IndianRupee}
+                title="Amount"
+                description="Pricing & GST"
+              >
+                <div>
+                  <Label
+                    htmlFor="product_base_price"
+                    className="text-xs font-semibold"
+                  >
+                    Base Price
+                  </Label>
+                  <Input
+                    id="product_base_price"
+                    name="product_base_price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.product_base_price || ""}
+                    onChange={handleChange}
+                    placeholder="0.00"
+                    disabled={saving}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label
+                    htmlFor="product_cgst"
+                    className="text-xs font-semibold"
+                  >
+                    CGST %
+                  </Label>
+                  <Input
+                    id="product_cgst"
+                    name="product_cgst"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.product_cgst || ""}
+                    onChange={handleChange}
+                    placeholder="0"
+                    disabled={saving}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label
+                    htmlFor="product_sgst"
+                    className="text-xs font-semibold"
+                  >
+                    SGST %
+                  </Label>
+                  <Input
+                    id="product_sgst"
+                    name="product_sgst"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.product_sgst || ""}
+                    onChange={handleChange}
+                    placeholder="0"
+                    disabled={saving}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label
+                    htmlFor="product_mrp_with_gst"
+                    className="text-xs font-semibold"
+                  >
+                    MRP (with GST)
+                  </Label>
+                  <Input
+                    id="product_mrp_with_gst"
+                    name="product_mrp_with_gst"
+                    type="number"
+                    value={gst.mrp.toFixed(2)}
+                    readOnly
+                    disabled
+                    className="mt-1.5 bg-muted font-semibold"
+                  />
+                </div>
+
+                {/* Breakup of the auto-calculated MRP */}
+                <p className="text-[11px] text-muted-foreground sm:col-span-2 lg:col-span-4">
+                  ₹{gst.base.toFixed(2)} + CGST ₹{gst.cgstAmount.toFixed(2)} +
+                  SGST ₹{gst.sgstAmount.toFixed(2)} ={" "}
+                  <span className="font-semibold text-foreground">
+                    ₹{gst.mrp.toFixed(2)}
+                  </span>
+                </p>
+
+                {franchiseType === 1 && (
+                  <>
                     <div>
                       <Label
                         htmlFor="product_igst"
@@ -808,33 +811,42 @@ const ProductForm = () => {
                         id="product_igst"
                         name="product_igst"
                         type="number"
+                        min="0"
                         step="0.01"
                         value={formData.product_igst || ""}
                         onChange={handleChange}
+                        placeholder="0"
                         disabled={saving}
                         className="mt-1.5"
                       />
                     </div>
-                  </div>
+                    <div>
+                      <Label
+                        htmlFor="product_final_amount"
+                        className="text-xs font-semibold"
+                      >
+                        Final Amount
+                      </Label>
+                      <Input
+                        id="product_final_amount"
+                        name="product_final_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.product_final_amount || ""}
+                        onChange={handleChange}
+                        placeholder="0.00"
+                        disabled={saving}
+                        className="mt-1.5"
+                      />
+                    </div>
+                  </>
+                )}
+              </FormSection>
 
-                  <div>
-                    <Label
-                      htmlFor="product_final_amount"
-                      className="text-xs font-semibold"
-                    >
-                      Final Amount
-                    </Label>
-                    <Input
-                      id="product_final_amount"
-                      name="product_final_amount"
-                      type="number"
-                      step="0.01"
-                      value={formData.product_final_amount || ""}
-                      onChange={handleChange}
-                      disabled={saving}
-                      className="mt-1.5"
-                    />
-                  </div>
+              {/* ===================== Inventory (shop only) ===================== */}
+              {franchiseType === 1 && (
+                <FormSection icon={Boxes} title="Inventory">
                   <div>
                     <Label
                       htmlFor="product_stock"
@@ -872,8 +884,80 @@ const ProductForm = () => {
                       className="mt-1.5"
                     />
                   </div>
-                </>
+                </FormSection>
               )}
+
+              {/* ===================== Settings ===================== */}
+              <FormSection icon={Settings2} title="Settings">
+                <div className="sm:col-span-1 lg:col-span-2">
+                  <Label className="mb-2 block text-xs font-semibold">
+                    Status
+                  </Label>
+                  <RadioGroup
+                    value={String(formData.product_is_active)}
+                    onValueChange={(val) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        product_is_active: Number(val) as 1 | 2,
+                      }))
+                    }
+                    className="flex flex-wrap gap-2"
+                  >
+                    <PillOption
+                      id="p-active"
+                      value="1"
+                      label="Active"
+                      checked={formData.product_is_active === 1}
+                      disabled={saving}
+                    />
+                    <PillOption
+                      id="p-inactive"
+                      value="2"
+                      label="Inactive"
+                      checked={formData.product_is_active === 2}
+                      disabled={saving}
+                    />
+                  </RadioGroup>
+                </div>
+
+                <div className="sm:col-span-1 lg:col-span-2">
+                  <Label className="mb-2 block text-xs font-semibold">
+                    Product Type
+                  </Label>
+                  <RadioGroup
+                    value={String(formData.product_type)}
+                    onValueChange={(val) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        product_type: Number(val) as ProductType,
+                      }))
+                    }
+                    className="flex flex-wrap gap-2"
+                  >
+                    <PillOption
+                      id="p-sales"
+                      value="1"
+                      label="Sales"
+                      checked={formData.product_type === 1}
+                      disabled={saving}
+                    />
+                    <PillOption
+                      id="p-purchase"
+                      value="2"
+                      label="Purchase"
+                      checked={formData.product_type === 2}
+                      disabled={saving}
+                    />
+                    <PillOption
+                      id="p-both"
+                      value="3"
+                      label="Both"
+                      checked={formData.product_type === 3}
+                      disabled={saving}
+                    />
+                  </RadioGroup>
+                </div>
+              </FormSection>
             </CardContent>
             <CardFooter className="justify-end gap-2 border-t border-border pt-5">
               <Button

@@ -83,6 +83,36 @@ export interface ProductDetailResponse {
 }
 
 /* ============================================================
+   HELPERS
+   ============================================================ */
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+export interface GstBreakup {
+  base: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  mrp: number; // base + CGST amount + SGST amount
+}
+
+// CGST / SGST are stored as percentages of the base price
+export const calculateMrpWithGst = (
+  base_price: number,
+  cgst_percent: number,
+  sgst_percent: number,
+): GstBreakup => {
+  const base = Number(base_price) || 0;
+  const cgstAmount = round2((base * (Number(cgst_percent) || 0)) / 100);
+  const sgstAmount = round2((base * (Number(sgst_percent) || 0)) / 100);
+  return {
+    base: round2(base),
+    cgstAmount,
+    sgstAmount,
+    mrp: round2(base + cgstAmount + sgstAmount),
+  };
+};
+
+/* ============================================================
    SERVICE
    ============================================================ */
 

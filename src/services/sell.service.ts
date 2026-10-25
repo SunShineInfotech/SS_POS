@@ -33,7 +33,13 @@ export interface SellPayload {
   customer_name?: string;
   payment_mode?: string; // 'Cash' | 'Card' | 'UPI', or a split like 'Cash+UPI'
   // Split payment lines — one tbl_transaction row each. Cash is net of change.
-  payments?: { mode: 'Cash' | 'Card' | 'UPI'; amount: number }[];
+  // account_id / account_name = the tbl_account that received this amount
+  payments?: {
+    mode: 'Cash' | 'Card' | 'UPI';
+    amount: number;
+    account_id?: number;
+    account_name?: string;
+  }[];
   items: SellItemPayload[];
 }
 

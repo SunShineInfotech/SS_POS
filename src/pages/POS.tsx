@@ -37,7 +37,6 @@ import {
   ChevronUp,
   CreditCard,
   FileText,
-  ImageOff,
   Loader2,
   Mail,
   MapPin,
@@ -64,6 +63,7 @@ import { toast } from "sonner";
 import axios from "axios";
 import { loadStore, saveStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { ProductImage, resolveImage } from "@/components/shared/ProductImage";
 import { SellService } from "@/services/sell.service";
 import { CustomerService, type StateRow } from "@/services/customer.service";
 import {
@@ -254,15 +254,6 @@ const lineTotal = (i: CartItem) => lineGross(i) - lineDiscount(i);
 const errorMessage = (e: any) =>
   e?.response?.data?.message || e?.message || "Something went wrong";
 
-// product_image comes back either as a full URL or a path relative to the site root
-const IMAGE_BASE = API_URL.replace(/v1_api\/?$/, "");
-const resolveImage = (path?: string | null): string =>
-  !path
-    ? ""
-    : /^(https?:|data:|blob:)/i.test(path)
-      ? path
-      : `${IMAGE_BASE}${path.replace(/^\/+/, "")}`;
-
 const escapeHtml = (s: string) =>
   s.replace(
     /[&<>"']/g,
@@ -381,38 +372,6 @@ const useIsMobile = () => {
     return () => mq.removeEventListener("change", onChange);
   }, []);
   return isMobile;
-};
-
-const ProductImage = ({
-  src,
-  alt,
-  className,
-}: {
-  src?: string;
-  alt: string;
-  className?: string;
-}) => {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed)
-    return (
-      <div
-        className={cn(
-          "flex items-center justify-center bg-muted text-muted-foreground",
-          className,
-        )}
-      >
-        <ImageOff className="h-1/3 w-1/3 opacity-40" />
-      </div>
-    );
-  return (
-    <img
-      src={src}
-      alt={alt}
-      loading="lazy"
-      onError={() => setFailed(true)}
-      className={cn("object-cover", className)}
-    />
-  );
 };
 
 /** Bottom sheet on mobile, centred dialog on desktop */

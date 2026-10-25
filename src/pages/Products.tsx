@@ -4,6 +4,10 @@ import { useNavigate } from "react-router-dom";
 import { DataTable } from "@/components/shared/DataTable";
 import { toast } from "sonner";
 import { ProductService, Product } from "@/services/product.service";
+import {
+  ImagePreviewModal,
+  PreviewImage,
+} from "@/components/shared/ImagePreviewModal";
 
 const getCompanyData = () => {
   const raw = localStorage.getItem("company_data");
@@ -13,6 +17,7 @@ const getCompanyData = () => {
 const Products = () => {
   const navigate = useNavigate();
   const [data, setData] = useState<Product[]>([]);
+  const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null);
   const company = getCompanyData();
   const franchiseType = company?.franchise_type || 1;
 
@@ -26,15 +31,34 @@ const Products = () => {
     {
       key: "product_image",
       label: "Image",
-      render: (v: any) =>
+      render: (v: any, row: any) =>
         v ? (
-          <img src={`${v}`} alt="" className="h-8 w-8 rounded object-cover" />
+          <button
+            type="button"
+            onClick={(e) => {
+              // Mobile card click opens edit — don't trigger that
+              e.stopPropagation();
+              setPreviewImage({
+                src: `${v}`,
+                title: row.product_name,
+                subtitle: row.category_name || undefined,
+              });
+            }}
+            className="block rounded transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-95"
+            aria-label={`View image of ${row.product_name}`}
+          >
+            <img
+              src={`${v}`}
+              alt=""
+              className="h-8 w-8 cursor-zoom-in rounded object-cover"
+            />
+          </button>
         ) : (
           <span className="text-xs text-muted-foreground">No image</span>
         ),
     },
     {
-      key: "product_final_amount",
+      key: "product_mrp_with_gst",
       label: "Price",
       render: (v: any) => `₹${Number(v || 0).toFixed(2)}`,
     },
@@ -136,15 +160,23 @@ const Products = () => {
   };
 
   return (
-    <DataTable
-      data={data}
-      columns={columns}
-      onAdd={() => navigate("/products/new")}
-      onEdit={(row) => navigate(`/products/${row.id}`)} // row.id = product_id
-      onDelete={(id) => handleDelete(id as number)}
-      addLabel="Add Product"
-      hideStatusToggle
-    />
+    <>
+      <DataTable
+        data={data}
+        columns={columns}
+        onAdd={() => navigate("/products/new")}
+        onEdit={(row) => navigate(`/products/${row.id}`)} // row.id = product_id
+        onDelete={(id) => handleDelete(id as number)}
+        addLabel="Add Product"
+        hideStatusToggle
+      />
+
+      {/* Rendered outside the table so clicks inside the popup don't bubble to row/card handlers */}
+      <ImagePreviewModal
+        image={previewImage}
+        onClose={() => setPreviewImage(null)}
+      />
+    </>
   );
 };
 

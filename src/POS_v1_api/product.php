@@ -34,6 +34,12 @@ $sgst          = isset($postData['product_sgst']) ? floatval($postData['product_
 $igst          = isset($postData['product_igst']) ? floatval($postData['product_igst']) : 0;
 $mrp_with_gst  = isset($postData['product_mrp_with_gst']) ? floatval($postData['product_mrp_with_gst']) : 0;
 $final_amount  = isset($postData['product_final_amount']) ? floatval($postData['product_final_amount']) : 0;
+
+// MRP is always derived server-side: Base Price + CGST% + SGST% of base
+// (keeps DB correct even if the client sends a stale/wrong value)
+$cgst_amount   = round($base_price * $cgst / 100, 2);
+$sgst_amount   = round($base_price * $sgst / 100, 2);
+$mrp_with_gst  = round($base_price + $cgst_amount + $sgst_amount, 2);
 $hsn_code      = isset($postData['product_hsn_code']) ? mysqli_real_escape_string($sql, trim($postData['product_hsn_code'])) : '';
 $sku           = isset($postData['product_sku']) ? mysqli_real_escape_string($sql, trim($postData['product_sku'])) : '';
 $is_active     = isset($postData['product_is_active']) ? intval($postData['product_is_active']) : 1;
@@ -453,7 +459,7 @@ switch ($type) {
                   WHERE tblp.company_id = '$company_id'
                     AND tblp.franchise_id = '$franchise_id'
                     AND tblp.is_deleted = '1'
-                    AND tblp.product_type = 2
+                    AND tblp.product_type IN (2, 3)
                   ORDER BY tblp.c_date DESC";
 
         $result = mysqli_query($sql, $query);

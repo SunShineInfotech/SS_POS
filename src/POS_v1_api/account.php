@@ -261,6 +261,110 @@ switch ($type) {
         break;
     }
 
+    // 6. Receive payment — ADD amounts to account balances (POS bill payment)
+    //    Body: { type: 6, company_id, franchise_id, financial_year_id,
+    //            entries: [{ account_id, amount }, ...],
+    //            remark?: "POS Sale BILL-001", log_transaction?: false }
+    //    All accounts are updated in one DB transaction (all or nothing).
+    case 6: {
+        if (empty($company_id) || empty($franchise_id)) {
+            http_response_code(400);
+            $response = ['status' => 'error', 'message' => 'Company and franchise IDs required'];
+            break;
+        }
+
+        $entries = (isset($postData['entries']) && is_array($postData['entries'])) ? $postData['entries'] : [];
+        $log_transaction = !empty($postData['log_transaction']);
+        $remark = isset($postData['remark'])
+            ? mysqli_real_escape_string($sql, substr(trim($postData['remark']), 0, 250))
+            : 'POS Sale';
+
+        // Merge duplicate accounts, ignore invalid / zero amounts
+        $credits = [];
+        foreach ($entries as $e) {
+            $id  = isset($e['account_id']) ? intval($e['account_id']) : 0;
+            $amt = isset($e['amount']) ? round(floatval($e['amount']), 2) : 0;
+            if ($id > 0 && $amt > 0) {
+                $credits[$id] = round(($credits[$id] ?? 0) + $amt, 2);
+            }
+        }
+        if (empty($credits)) {
+            http_response_code(400);
+            $response = ['status' => 'error', 'message' => 'No valid account amounts received'];
+            break;
+        }
+        if ($log_transaction && empty($financial_year_id)) {
+            http_response_code(400);
+            $response = ['status' => 'error', 'message' => 'Financial year is required to log transactions'];
+            break;
+        }
+
+        mysqli_begin_transaction($sql);
+        try {
+            $updated = [];
+            foreach ($credits as $id => $amt) {
+                $amtSql = sprintf('%.2F', $amt);
+
+                $q = "UPDATE tbl_account
+                      SET account_balance = account_balance + $amtSql,
+                          u_date = NOW()
+                      WHERE account_id = $id
+                        AND company_id = '$company_id'
+                        AND franchise_id = '$franchise_id'
+                        AND is_deleted = 1";
+                if (!mysqli_query($sql, $q)) {
+                    throw new Exception('Balance update failed: ' . mysqli_error($sql));
+                }
+                if (mysqli_affected_rows($sql) === 0) {
+                    throw new Exception("Account not found (ID: $id)");
+                }
+
+                $balRes = mysqli_query($sql, "SELECT account_name, account_balance
+                                              FROM tbl_account WHERE account_id = $id");
+                $row = $balRes ? mysqli_fetch_assoc($balRes) : null;
+                $newBalance = $row ? floatval($row['account_balance']) : 0;
+
+                if ($log_transaction) {
+                    $balSql = sprintf('%.2F', $newBalance);
+                    $t = "INSERT INTO tbl_transaction
+                          (company_id, franchise_id, transaction_financial_year_id,
+                           transaction_account_id, transaction_amount, transaction_type,
+                           transaction_date, transaction_balance, transaction_remark,
+                           is_deleted, c_date)
+                          VALUES ('$company_id', '$franchise_id', $financial_year_id,
+                                  $id, $amtSql, 1,
+                                  CURDATE(), $balSql, '$remark',
+                                  1, NOW())";
+                    if (!mysqli_query($sql, $t)) {
+                        throw new Exception('Transaction log failed: ' . mysqli_error($sql));
+                    }
+                }
+
+                $updated[] = [
+                    'account_id'   => $id,
+                    'account_name' => $row ? $row['account_name'] : '',
+                    'amount'       => $amt,
+                    'balance'      => $newBalance,
+                ];
+            }
+
+            mysqli_commit($sql);
+            logMessage('account', "Payment received ($remark): " . json_encode($updated), 'INFO');
+            http_response_code(200);
+            $response = [
+                'status'  => 'success',
+                'message' => 'Account balances updated',
+                'data'    => $updated,
+            ];
+        } catch (Exception $ex) {
+            mysqli_rollback($sql);
+            logError('account', $ex->getMessage());
+            http_response_code(500);
+            $response = ['status' => 'error', 'message' => $ex->getMessage()];
+        }
+        break;
+    }
+
     default:
         http_response_code(400);
         $response = ['status' => 'error', 'message' => 'Invalid type'];
