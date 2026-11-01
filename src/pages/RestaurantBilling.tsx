@@ -30,6 +30,7 @@ import {
   Loader2,
   Minus,
   Pause,
+  PartyPopper,
   Phone,
   Plus,
   Printer,
@@ -60,6 +61,14 @@ import {
   notifyOrdersChanged,
   saveActiveOrder,
 } from "@/lib/restaurantOrders.ts";
+import {
+  isLinePartial,
+  isLineServed,
+  serveProgress,
+  servedQtyOf,
+  toggleLineServed,
+  withQtyChange,
+} from "@/lib/serveStatus";
 
 /* ============================================================
    TYPES
@@ -77,6 +86,12 @@ interface Product {
 }
 interface CartItem extends Product {
   qty: number;
+  /** Units already delivered to the table */
+  servedQty?: number;
+  /** When this line (its latest unserved units) was ordered */
+  addedAt?: string | null;
+  /** When the line became fully served */
+  servedAt?: string | null;
 }
 
 interface HeldBill {
@@ -542,6 +557,9 @@ const RestaurantBilling = () => {
   const total = roundOff(subtotal - discountAmount);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
+  // Serving progress of this table's order
+  const serveInfo = useMemo(() => serveProgress(cart), [cart]);
+
   // Close the mobile cart sheet automatically when the cart is emptied
   useEffect(() => {
     if (cart.length === 0) setMobileCartOpen(false);
@@ -645,20 +663,39 @@ const RestaurantBilling = () => {
       : "";
 
   /* ---------- Cart actions ---------- */
+  // New lines get addedAt (wait timer); more units on a served line start a fresh wait
   const add = (p: Product) =>
     setCart((c) =>
       c.find((x) => x.id === p.id)
-        ? c.map((x) => (x.id === p.id ? { ...x, qty: x.qty + 1 } : x))
-        : [...c, { ...p, qty: 1 }],
+        ? c.map((x) => (x.id === p.id ? withQtyChange(x, x.qty + 1) : x))
+        : [
+            ...c,
+            {
+              ...p,
+              qty: 1,
+              servedQty: 0,
+              addedAt: new Date().toISOString(),
+              servedAt: null,
+            },
+          ],
     );
   const updateQty = (id: number, d: number) =>
     setCart((c) =>
       c
-        .map((x) => (x.id === id ? { ...x, qty: Math.max(0, x.qty + d) } : x))
+        .map((x) =>
+          x.id === id ? withQtyChange(x, Math.max(0, x.qty + d)) : x,
+        )
         .filter((x) => x.qty > 0),
     );
   const removeFromCart = (id: number) =>
     setCart((c) => c.filter((x) => x.id !== id));
+  const toggleServed = (id: number) =>
+    setCart((c) => {
+      const next = toggleLineServed(c, id);
+      if (!serveProgress(c).complete && serveProgress(next).complete)
+        toast.success("Order complete — all items served");
+      return next;
+    });
 
   /* ---------- Fly-to-cart animation ---------- */
   const cartIconRef = useRef<HTMLButtonElement>(null);
@@ -1109,6 +1146,19 @@ const RestaurantBilling = () => {
       </span>
     ) : null;
 
+  const serveBadge =
+    cart.length === 0 ? null : serveInfo.complete ? (
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-md shadow-emerald-500/25 animate-in fade-in zoom-in-95">
+        <PartyPopper className="h-3 w-3" />
+        Order Complete
+      </span>
+    ) : (
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-semibold text-warning">
+        <Clock className="h-3 w-3" />
+        {serveInfo.servedLines}/{serveInfo.lines} served
+      </span>
+    );
+
   const renderCustomer = () => (
     <div className="space-y-2 border-b border-border p-4">
       <div className="flex items-center justify-between">
@@ -1158,6 +1208,49 @@ const RestaurantBilling = () => {
     </div>
   );
 
+  const renderServeToggle = (i: CartItem) => {
+    const done = isLineServed(i);
+    const partial = isLinePartial(i);
+    const sq = servedQtyOf(i);
+    return (
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={done ? true : partial ? "mixed" : false}
+        onClick={() => toggleServed(i.id)}
+        title={done ? "Mark as pending" : "Mark as served"}
+        className={cn(
+          "flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[11px] font-semibold transition-all active:scale-95",
+          done
+            ? "border-success/40 bg-success/10 text-success"
+            : partial
+              ? "border-warning/40 bg-warning/10 text-warning"
+              : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground",
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-3.5 w-3.5 items-center justify-center rounded-[4px] border-2 transition-colors",
+            done
+              ? "border-success bg-success text-white"
+              : partial
+                ? "border-warning"
+                : "border-muted-foreground/40",
+          )}
+        >
+          {done && (
+            <Check
+              className="h-2.5 w-2.5 animate-in zoom-in-50"
+              strokeWidth={4}
+            />
+          )}
+          {partial && <Minus className="h-2.5 w-2.5" strokeWidth={4} />}
+        </span>
+        {done ? "Served" : partial ? `${sq}/${i.qty}` : "Pending"}
+      </button>
+    );
+  };
+
   const renderCartItems = () =>
     cart.length === 0 ? (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -1174,7 +1267,10 @@ const RestaurantBilling = () => {
             <ProductImage
               src={i.image}
               alt={i.name}
-              className="h-11 w-11 shrink-0 rounded-lg"
+              className={cn(
+                "h-11 w-11 shrink-0 rounded-lg transition-opacity",
+                isLineServed(i) && "opacity-60",
+              )}
             />
             <div className="min-w-0 flex-1 space-y-2">
               <div className="flex items-start justify-between gap-2">
@@ -1192,25 +1288,28 @@ const RestaurantBilling = () => {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center rounded-lg border border-border">
-                  <button
-                    onClick={() => updateQty(i.id, -1)}
-                    aria-label="Decrease quantity"
-                    className="p-1.5 hover:bg-muted active:scale-90"
-                  >
-                    <Minus className="h-3 w-3" />
-                  </button>
-                  <span className="min-w-[24px] px-1.5 text-center font-display text-xs font-semibold">
-                    {i.qty}
-                  </span>
-                  <button
-                    onClick={() => updateQty(i.id, 1)}
-                    aria-label="Increase quantity"
-                    className="p-1.5 hover:bg-muted active:scale-90"
-                  >
-                    <Plus className="h-3 w-3" />
-                  </button>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center rounded-lg border border-border">
+                    <button
+                      onClick={() => updateQty(i.id, -1)}
+                      aria-label="Decrease quantity"
+                      className="p-1.5 hover:bg-muted active:scale-90"
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <span className="min-w-[24px] px-1.5 text-center font-display text-xs font-semibold">
+                      {i.qty}
+                    </span>
+                    <button
+                      onClick={() => updateQty(i.id, 1)}
+                      aria-label="Increase quantity"
+                      className="p-1.5 hover:bg-muted active:scale-90"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {renderServeToggle(i)}
                 </div>
                 <span className="font-display text-sm font-semibold">
                   ₹{fmt(round2(i.final_amount * i.qty))}
@@ -1239,15 +1338,21 @@ const RestaurantBilling = () => {
             {cartCount} {cartCount === 1 ? "item" : "items"}
           </p>
         </div>
+        {serveBadge}
       </div>
 
       {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         {renderCustomer()}
-        <div className="px-4 pb-1 pt-3">
+        <div className="flex items-center justify-between px-4 pb-1 pt-3">
           <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             Items{cart.length > 0 && ` (${cart.length})`}
           </h3>
+          {cart.length > 0 && (
+            <span className="text-[10px] text-muted-foreground">
+              Tick when served
+            </span>
+          )}
         </div>
         {renderCartItems()}
 
@@ -1524,8 +1629,19 @@ const RestaurantBilling = () => {
             <p className="truncate font-display text-sm font-bold">
               {table.name}
             </p>
-            <p className="text-[10px] text-muted-foreground">
-              Order in progress
+            <p
+              className={cn(
+                "text-[10px]",
+                serveInfo.complete
+                  ? "font-semibold text-success"
+                  : "text-muted-foreground",
+              )}
+            >
+              {cart.length === 0
+                ? "New order"
+                : serveInfo.complete
+                  ? "All items served"
+                  : `Order in progress · ${serveInfo.pendingLines} to serve`}
             </p>
           </div>
         </div>
@@ -1573,12 +1689,6 @@ const RestaurantBilling = () => {
               </span>
             )}
           </button>
-          {/* <div className="text-right">
-            <p className="text-[10px] text-muted-foreground">Total</p>
-            <p className="font-display text-base font-bold text-primary">
-              ₹{fmt(total)}
-            </p>
-          </div> */}
         </div>
       </header>
 
@@ -1655,7 +1765,13 @@ const RestaurantBilling = () => {
                 </span>
               </span>
               <div className="flex-1 text-left leading-tight">
-                <p className="text-[11px] opacity-85">Total</p>
+                <p className="text-[11px] opacity-85">
+                  Total
+                  {cart.length > 0 &&
+                    (serveInfo.complete
+                      ? " · all served"
+                      : ` · ${serveInfo.servedLines}/${serveInfo.lines} served`)}
+                </p>
                 <p className="font-display text-base font-bold">
                   ₹{fmt(total)}
                 </p>
@@ -1775,6 +1891,16 @@ const RestaurantBilling = () => {
                 </p>
               )}
             </div>
+
+            {/* Unserved items warning — bill can still be printed */}
+            {!serveInfo.complete && cart.length > 0 && (
+              <p className="flex items-center gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-xs font-medium text-warning">
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+                {serveInfo.pendingLines}{" "}
+                {serveInfo.pendingLines === 1 ? "item is" : "items are"} not
+                marked as served yet
+              </p>
+            )}
 
             {/* Payment modes */}
             <div>

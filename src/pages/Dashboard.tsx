@@ -1476,13 +1476,287 @@ const HeroStat = ({
   </div>
 );
 
+/* ---------- Hero insights: bills by hour + product share (selected period) ---------- */
+const PRODUCT_COLORS = [
+  "#7DD3FC",
+  "#FCD34D",
+  "#F9A8D4",
+  "#A5B4FC",
+  "#6EE7B7",
+  "rgba(255,255,255,.28)",
+];
+
+const HeroInsights = ({
+  hourly,
+  products,
+  totalSales,
+}: {
+  hourly: HourRow[];
+  products: ProductRow[];
+  totalSales: number;
+}) => {
+  // Always 24 hours, even if the API skips empty ones
+  const hours = useMemo(() => {
+    const map = new Map(hourly.map((h) => [Number(h.hour), h]));
+    return Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      sales: Number(map.get(h)?.sales ?? 0),
+      orders: Number(map.get(h)?.orders ?? 0),
+    }));
+  }, [hourly]);
+
+  const totalOrders = hours.reduce((s, h) => s + h.orders, 0);
+  const activeHours = hours.filter((h) => h.orders > 0).length;
+  const busiest = hours.reduce<(typeof hours)[number] | null>(
+    (m, h) => (h.orders > 0 && (!m || h.orders > m.orders) ? h : m),
+    null,
+  );
+
+  const chart = hours.map((h) => ({
+    label: formatHour(h.hour),
+    n: h.orders,
+    s: h.sales,
+    h: h.hour,
+  }));
+
+  // Top 5 products + "Others" (rest of the period's sales)
+  const pie = useMemo(() => {
+    const top = [...products]
+      .filter((p) => Number(p.revenue) > 0)
+      .sort((a, b) => Number(b.revenue) - Number(a.revenue))
+      .slice(0, 5)
+      .map((p) => ({
+        name: p.name,
+        value: Number(p.revenue),
+        qty: Number(p.qty),
+      }));
+    const topSum = top.reduce((s, p) => s + p.value, 0);
+    const rest = Math.max(0, totalSales - topSum);
+    if (rest >= 1) top.push({ name: "Others", value: rest, qty: 0 });
+    return top;
+  }, [products, totalSales]);
+  const pieTotal = pie.reduce((s, p) => s + p.value, 0);
+  const leader = pie[0] && pie[0].name !== "Others" ? pie[0] : null;
+
+  return (
+    <div className="relative mt-6 flex min-h-0 flex-1 flex-col border-t border-white/10 pt-5">
+      {totalOrders === 0 && pieTotal === 0 ? (
+        <div className="flex min-h-[9rem] flex-1 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 text-center">
+          <BarChart3 className="h-6 w-6 text-white/35" />
+          <p className="text-xs text-white/45">No bills in this period yet</p>
+        </div>
+      ) : (
+        <div className="grid flex-1 gap-5 lg:grid-cols-[1.35fr_1fr]">
+          {/* Bills by hour */}
+          <div className="flex min-w-0 flex-col">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-white/60">
+                  Bills by hour
+                </p>
+                <p className="mt-0.5 font-display text-lg font-bold dash-num">
+                  {num(totalOrders)}{" "}
+                  <span className="text-xs font-medium text-white/45">
+                    bills · {activeHours} active{" "}
+                    {activeHours === 1 ? "hour" : "hours"}
+                  </span>
+                </p>
+              </div>
+              {busiest && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-300/10 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                  <Clock className="h-3 w-3" /> Busiest{" "}
+                  {formatHour(busiest.hour)} · {busiest.orders} bills
+                </span>
+              )}
+            </div>
+            <div className="relative -mx-1 mt-3 min-h-[8.5rem] flex-1">
+              <div className="absolute inset-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chart}
+                    barCategoryGap="18%"
+                    margin={{ top: 4, right: 4, left: 4, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="billBar" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="0%"
+                          stopColor="#7DD3FC"
+                          stopOpacity={0.95}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor="#3B82F6"
+                          stopOpacity={0.45}
+                        />
+                      </linearGradient>
+                      <linearGradient id="billPeak" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#FDE68A" stopOpacity={1} />
+                        <stop
+                          offset="100%"
+                          stopColor="#F59E0B"
+                          stopOpacity={0.6}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="label" hide />
+                    <Tooltip
+                      cursor={{ fill: "rgba(255,255,255,.06)" }}
+                      contentStyle={{
+                        background: "#0B1633",
+                        border: "1px solid rgba(255,255,255,.12)",
+                        borderRadius: 12,
+                        fontSize: 12,
+                        color: "#fff",
+                        padding: "6px 10px",
+                      }}
+                      labelStyle={{ color: "rgba(255,255,255,.6)" }}
+                      formatter={(v, _n, item) => [
+                        `${num(Number(v))} bills · ${inr(Number((item?.payload as { s?: number } | undefined)?.s ?? 0))}`,
+                        "Orders",
+                      ]}
+                    />
+                    <Bar
+                      dataKey="n"
+                      radius={[6, 6, 2, 2]}
+                      maxBarSize={18}
+                      background={{ fill: "rgba(255,255,255,0.04)", radius: 6 }}
+                    >
+                      {chart.map((c) => (
+                        <Cell
+                          key={c.h}
+                          fill={
+                            busiest && c.h === busiest.hour
+                              ? "url(#billPeak)"
+                              : "url(#billBar)"
+                          }
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="mt-1 flex justify-between px-1 text-[10px] text-white/35">
+              <span>12 AM</span>
+              <span>6 AM</span>
+              <span>12 PM</span>
+              <span>6 PM</span>
+              <span>11 PM</span>
+            </div>
+          </div>
+
+          {/* Product share — donut */}
+          <div className="flex min-w-0 flex-col">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-medium text-white/60">
+                Sales share by product
+              </p>
+              {leader && (
+                <span className="inline-flex max-w-[55%] items-center gap-1 truncate rounded-full bg-sky-300/10 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+                  <Trophy className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{leader.name}</span>
+                </span>
+              )}
+            </div>
+            {pieTotal === 0 ? (
+              <div className="mt-3 flex flex-1 items-center justify-center rounded-2xl border border-dashed border-white/15 py-8 text-xs text-white/45">
+                No product sales yet
+              </div>
+            ) : (
+              <div className="mt-3 flex flex-1 items-center gap-4">
+                <div className="relative h-32 w-32 shrink-0 sm:h-36 sm:w-36">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pie}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="68%"
+                        outerRadius="100%"
+                        paddingAngle={pie.length > 1 ? 3 : 0}
+                        stroke="none"
+                        cornerRadius={6}
+                      >
+                        {pie.map((p, i) => (
+                          <Cell
+                            key={p.name}
+                            fill={
+                              p.name === "Others"
+                                ? PRODUCT_COLORS[5]
+                                : PRODUCT_COLORS[i % 5]
+                            }
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          background: "#0B1633",
+                          border: "1px solid rgba(255,255,255,.12)",
+                          borderRadius: 12,
+                          fontSize: 12,
+                          color: "#fff",
+                          padding: "6px 10px",
+                        }}
+                        itemStyle={{ color: "#fff" }}
+                        formatter={(v, n) => [
+                          `${inr(Number(v))} · ${((Number(v) / pieTotal) * 100).toFixed(0)}%`,
+                          String(n),
+                        ]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-white/50">
+                      Sales
+                    </span>
+                    <span className="font-display text-[15px] font-bold dash-num">
+                      {compactInr(pieTotal)}
+                    </span>
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  {pie.map((p, i) => (
+                    <div
+                      key={p.name}
+                      className="flex min-w-0 items-center gap-2 text-[11px]"
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{
+                          background:
+                            p.name === "Others"
+                              ? PRODUCT_COLORS[5]
+                              : PRODUCT_COLORS[i % 5],
+                        }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-white/75">
+                        {p.name}
+                      </span>
+                      <span className="shrink-0 font-semibold dash-num">
+                        {((p.value / pieTotal) * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const HeroCard = ({
   k,
   hourly,
+  products,
   period,
 }: {
   k: Summary["kpis"];
   hourly: HourRow[];
+  products: ProductRow[];
   period: string;
 }) => {
   const avg = k.orders.value ? k.sales.value / k.orders.value : 0;
@@ -1502,7 +1776,7 @@ const HeroCard = ({
   }));
 
   return (
-    <section className="dash-rise relative overflow-hidden rounded-[26px] bg-[linear-gradient(140deg,#0A1430_0%,#0F2147_48%,#173A7E_100%)] p-5 text-white shadow-[0_28px_60px_-28px_rgba(10,20,48,.75)] sm:p-7">
+    <section className="dash-rise relative flex flex-col overflow-hidden rounded-[26px] bg-[linear-gradient(140deg,#0A1430_0%,#0F2147_48%,#173A7E_100%)] p-5 text-white shadow-[0_28px_60px_-28px_rgba(10,20,48,.75)] sm:p-7">
       <div className="dash-grid pointer-events-none absolute inset-0" />
       <div className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-primary/45 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-32 left-6 h-64 w-64 rounded-full bg-sky-400/15 blur-3xl" />
@@ -1610,6 +1884,12 @@ const HeroCard = ({
           </div>
         </div>
       </div>
+
+      <HeroInsights
+        hourly={hourly}
+        products={products}
+        totalSales={k.sales.value}
+      />
     </section>
   );
 };
@@ -1659,6 +1939,8 @@ const CollectionsCard = ({ c }: { c: Summary["collections"] }) => {
       icon={Wallet}
       tone="success"
       delay={80}
+      className="flex flex-col"
+      bodyClass="flex flex-1 flex-col"
     >
       <div className="divide-y divide-border/60">
         {rows.map((r) => (
@@ -1678,7 +1960,7 @@ const CollectionsCard = ({ c }: { c: Summary["collections"] }) => {
         ))}
       </div>
 
-      <div className="mt-2 rounded-2xl bg-muted/40 p-3.5">
+      <div className="mt-2 flex flex-1 flex-col rounded-2xl bg-muted/40 p-3.5">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Selected period · by mode
@@ -1701,21 +1983,24 @@ const CollectionsCard = ({ c }: { c: Summary["collections"] }) => {
                 />
               ))}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+            <div className="mt-3 flex flex-1 flex-col justify-between gap-1.5">
               {c.by_mode.map((m, i) => (
                 <div
                   key={m.mode}
-                  className="flex min-w-0 items-center gap-1.5 text-[11px]"
+                  className="flex min-w-0 items-center gap-2 text-[12px]"
                 >
                   <span
                     className="h-2 w-2 shrink-0 rounded-full"
                     style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
                   />
-                  <span className="truncate text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {m.mode}
                   </span>
-                  <span className="ml-auto font-semibold dash-num">
-                    {compactInr(m.amount)}
+                  <span className="w-9 shrink-0 text-right text-[10px] text-muted-foreground dash-num">
+                    {((m.amount / modeTotal) * 100).toFixed(0)}%
+                  </span>
+                  <span className="w-16 shrink-0 text-right font-semibold dash-num">
+                    {inr(m.amount)}
                   </span>
                 </div>
               ))}
@@ -2853,6 +3138,7 @@ const Dashboard = () => {
             <HeroCard
               k={data.kpis}
               hourly={data.hourly ?? []}
+              products={data.top_products?.by_revenue ?? []}
               period={period}
             />
             <CollectionsCard c={data.collections} />
